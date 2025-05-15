@@ -1,0 +1,13 @@
+package com.sds.communicators.common.type;
+
+public enum CommandType {
+    READ_REQUEST,
+    STARTING_READ_REQUEST,
+    STOPPING_READ_REQUEST,
+    WRITE_REQUEST,
+    STARTING_WRITE_REQUEST,
+    STOPPING_WRITE_REQUEST,
+    REQUEST,
+    STARTING_REQUEST,
+    STOPPING_REQUEST
+}

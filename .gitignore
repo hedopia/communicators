@@ -1,0 +1,14 @@
+target/
+!**/src/main/**
+!**/src/test/**
+
+.idea
+*.iws
+*.iml
+*.ipr
+.mvn
+*.db
+log
+
+.vscode/
+/.idea/
