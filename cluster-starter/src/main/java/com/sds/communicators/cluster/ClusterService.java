@@ -121,7 +121,7 @@ class ClusterService {
                 }
                 log.trace("send heartbeat success, elapsed time: {}[ms]", System.currentTimeMillis() - begin);
             } catch (Exception e) {
-                log.error("send heartbeat failed::" + e.getMessage());
+                log.error("send heartbeat failed::{}", e.getMessage());
             }
         });
     }
@@ -231,6 +231,28 @@ class ClusterService {
                 }
             }
         }
+
+        synchronized (syncMutex) {
+            if (clusterStarter.position == Position.LEADER) {
+                if (!sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))
+                    overwriteLeaderSharedObject(nodeIndex);
+            }
+        }
+    }
+
+    private String overwriteLeaderSharedObject(int nodeIndex) {
+        log.debug("overwrite leader shared object for node-index: {}", nodeIndex);
+        AtomicReference<MergeSharedObjectInfo> receivedSharedObjectInfo = new AtomicReference<>();
+        var ret = redirectFunction.toIndexFunc(nodeIndex, targetUrl ->
+                receivedSharedObjectInfo.set(client.getClient(targetUrl).getSharedObject(clusterBasePath)), "get shared object");
+        if (ret == null) {
+            log.trace("get shared object from node-index: {} success", nodeIndex);
+            overwriteSharedObject(nodeIndex, receivedSharedObjectInfo.get());
+            return null;
+        } else {
+            log.error("get shared object from node-index: {} failed", nodeIndex, ret);
+            return "get shared object from node-index: " + nodeIndex + " failed";
+        }
     }
 
     private void clusterAdded(int nodeIndex) {
@@ -325,17 +347,8 @@ class ClusterService {
                     sharedObjectSeq.putIfAbsent(senderNodeIndex, 0L);
                     if (sharedObjectSeq.get(senderNodeIndex) != seq) {
                         log.trace("set shared object to leader, shared-object-sequence mismatch for node-index: {}, leader: {}, sender: {}", senderNodeIndex, sharedObjectSeq.get(senderNodeIndex), seq);
-                        AtomicReference<MergeSharedObjectInfo> receivedSharedObjectInfo = new AtomicReference<>();
-                        var ret = redirectFunction.toIndexFunc(senderNodeIndex, targetUrl ->
-                                receivedSharedObjectInfo.set(client.getClient(targetUrl).getSharedObject(clusterBasePath)), "get shared object");
-                        if (ret == null) {
-                            log.trace("get shared object from node-index: {} success", senderNodeIndex);
-                            sharedObject.put(senderNodeIndex, receivedSharedObjectInfo.get().obj);
-                            sharedObjectSeq.put(senderNodeIndex, receivedSharedObjectInfo.get().getSeq());
-                        } else {
-                            log.error("get shared object from node-index: {} failed", senderNodeIndex, ret);
-                            return "get shared object from node-index: " + senderNodeIndex + " failed";
-                        }
+                        var ret = overwriteLeaderSharedObject(senderNodeIndex);
+                        if (ret != null) return ret;
                     } else {
                         log.trace("set shared object to leader, shared-object-sequence match for node-index: {}", senderNodeIndex);
                         if (sharedObjectInfo instanceof MergeSharedObjectInfo)
