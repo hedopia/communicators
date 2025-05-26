@@ -386,7 +386,7 @@ class ClusterService {
     }
 
     void syncSharedObject(SharedObject object) {
-        log.trace("synchronize split brain nodes");
+        log.trace("synchronize split brain nodes start");
         synchronized (heartbeatMutex) {
             for (var nodeIndex : object.sharedObject.keySet()) {
                 sharedObject.putIfAbsent(nodeIndex, object.sharedObject.get(nodeIndex));
@@ -403,6 +403,7 @@ class ClusterService {
                     client.getClient(sync.getValue0()).overwriteSharedObject(clusterBasePath, sync.getValue1(),
                             new MergeSharedObjectInfo(sharedObjectSeq.get(sync.getValue1()), sharedObject.get(sync.getValue1()))));
         }
+        log.trace("synchronize split brain nodes end");
     }
 
     void overwriteSharedObject(int nodeIndex, MergeSharedObjectInfo sharedObjectInfo) {
