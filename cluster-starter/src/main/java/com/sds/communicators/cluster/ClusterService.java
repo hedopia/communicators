@@ -386,6 +386,7 @@ class ClusterService {
     }
 
     void syncSharedObject(SharedObject object) {
+        log.trace("synchronize split brain nodes");
         synchronized (heartbeatMutex) {
             for (var nodeIndex : object.sharedObject.keySet()) {
                 sharedObject.putIfAbsent(nodeIndex, object.sharedObject.get(nodeIndex));
