@@ -128,11 +128,11 @@ class ClusterService {
 
     private void sendHeartbeat(Position position) {
         redirectFunction.toAllFunc(targetUrl ->
-            client.getClient(targetUrl).heartbeat(
-                    clusterBasePath,
-                    clusterStarter.nodeIndex,
-                    position,
-                    sharedObjectSeq), "send heartbeat");
+                client.getClient(targetUrl).heartbeat(
+                        clusterBasePath,
+                        clusterStarter.nodeIndex,
+                        position,
+                        sharedObjectSeq), "send heartbeat");
     }
 
     void transition(Position position) {
@@ -394,7 +394,7 @@ class ClusterService {
             }
             var results = new ConcurrentHashMap<String, Set<Integer>>();
             redirectFunction.toAllFunc(targetUrl ->
-                    results.put(targetUrl, client.getClient(targetUrl).checkSharedObjectSeq(clusterBasePath, sharedObjectSeq)),
+                            results.put(targetUrl, client.getClient(targetUrl).checkSharedObjectSeq(clusterBasePath, sharedObjectSeq)),
                     "check shared-object-sequence");
             var syncList = results.entrySet().stream()
                     .flatMap(entry -> entry.getValue().stream().map(nodeIndex -> new Pair<>(entry.getKey(), nodeIndex)))
