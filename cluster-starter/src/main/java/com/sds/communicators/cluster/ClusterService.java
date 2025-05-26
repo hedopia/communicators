@@ -200,9 +200,9 @@ class ClusterService {
             transition(Position.FOLLOWER);
 
             synchronized (syncMutex) {
-                redirectFunction.toLeaderFuncConfirmed(targetUrl -> {
-                    client.getClient(targetUrl).syncSharedObject(clusterBasePath, new SharedObject(sharedObject, sharedObjectSeq));
-                }, "synchronize split brain leader shared object");
+                redirectFunction.toLeaderFuncConfirmed(targetUrl ->
+                                client.getClient(targetUrl).syncSharedObject(clusterBasePath, new SharedObject(sharedObject, sharedObjectSeq)),
+                        "synchronize split brain leader shared object");
             }
         }
 
@@ -234,7 +234,7 @@ class ClusterService {
 
         synchronized (syncMutex) {
             if (clusterStarter.position == Position.LEADER) {
-                if (!sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))
+                if (sharedObjectSeq.get(nodeIndex) == null || !sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))
                     overwriteLeaderSharedObject(nodeIndex);
             }
         }
