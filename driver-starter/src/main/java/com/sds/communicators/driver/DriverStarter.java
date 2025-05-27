@@ -220,7 +220,9 @@ public abstract class DriverStarter {
     void deleteDevices(Map<String, String> deleteResults) {
         var deviceIds = deleteResults.keySet()
                 .stream()
-                .filter(s -> !driverService.driverProtocols.containsKey(s))
+                .filter(deviceId ->
+                        !driverService.driverProtocols.containsKey(deviceId) &&
+                                clusterStarter.getSharedObject().containsKey(deviceId))
                 .collect(Collectors.toList());
         if (deviceIds.isEmpty()) return;
         clusterStarter.deleteSharedObject(deviceIds.stream().map(Collections::singletonList).collect(Collectors.toList()));

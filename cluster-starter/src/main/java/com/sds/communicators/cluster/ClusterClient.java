@@ -109,8 +109,8 @@ class ClusterClient {
         @RequestLine("GET {clusterBasePath}/get-shared-object/{nodeIndex}")
         ClusterService.MergeSharedObjectInfo getSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex);
 
-        @RequestLine("POST {clusterBasePath}/sync-shared-object")
-        void syncSharedObject(@Param("clusterBasePath") String clusterBasePath, ClusterService.SharedObject sharedObject);
+        @RequestLine("POST {clusterBasePath}/sync-shared-object/{nodeIndex}")
+        void syncSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.SharedObject sharedObject);
 
         @RequestLine("POST {clusterBasePath}/check-shared-object-sequence")
         Set<Integer> checkSharedObjectSeq(@Param("clusterBasePath") String clusterBasePath, Map<Integer, Long> sharedObjectSeq);

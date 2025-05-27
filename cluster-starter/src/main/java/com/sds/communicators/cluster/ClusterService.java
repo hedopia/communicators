@@ -201,7 +201,10 @@ class ClusterService {
 
             synchronized (syncMutex) {
                 redirectFunction.toLeaderFuncConfirmed(targetUrl ->
-                                client.getClient(targetUrl).syncSharedObject(clusterBasePath, new SharedObject(sharedObject, sharedObjectSeq)),
+                                client.getClient(targetUrl).syncSharedObject(
+                                        clusterBasePath,
+                                        clusterStarter.nodeIndex,
+                                        new SharedObject(sharedObject, sharedObjectSeq)),
                         "synchronize split brain leader shared object");
             }
         }
@@ -220,11 +223,16 @@ class ClusterService {
                     sharedObjectSeq.putIfAbsent(entry.getKey(), 0L);
                     if (!entry.getValue().equals(sharedObjectSeq.get(entry.getKey()))) {
                         log.debug("heartbeat shared-object-sequence mismatch for node-index: {}, leader: {}, this: {}", entry.getKey(), entry.getValue(), sharedObjectSeq.get(entry.getKey()));
-                        redirectFunction.toLeaderFunc(targetUrl -> {
-                            var receivedSharedObjectInfo = client.getClient(targetUrl).getSharedObject(clusterBasePath, entry.getKey());
-                            sharedObject.put(entry.getKey(), receivedSharedObjectInfo.obj);
-                            sharedObjectSeq.put(entry.getKey(), receivedSharedObjectInfo.seq);
+                        AtomicReference<MergeSharedObjectInfo> receivedSharedObjectInfo = new AtomicReference<>();
+                        var ret = redirectFunction.toLeaderFunc(targetUrl -> {
+                            receivedSharedObjectInfo.set(client.getClient(targetUrl).getSharedObject(clusterBasePath, entry.getKey()));
                         }, "get shared object");
+                        if (ret == null) {
+                            log.trace("get shared object for sync follower from node-index: {} success", entry.getKey());
+                            overwriteSharedObject(entry.getKey(), receivedSharedObjectInfo.get());
+                        } else {
+                            log.error("get shared object for sync follower from node-index: {} failed", entry.getKey(), ret);
+                        }
                     } else {
                         log.trace("heartbeat shared-object-sequence match for node-index: {}", entry.getKey());
                     }
@@ -246,12 +254,12 @@ class ClusterService {
         var ret = redirectFunction.toIndexFunc(nodeIndex, targetUrl ->
                 receivedSharedObjectInfo.set(client.getClient(targetUrl).getSharedObject(clusterBasePath)), "get shared object");
         if (ret == null) {
-            log.trace("get shared object from node-index: {} success", nodeIndex);
+            log.trace("get shared object for sync leader from node-index: {} success", nodeIndex);
             overwriteSharedObject(nodeIndex, receivedSharedObjectInfo.get());
             return null;
         } else {
-            log.error("get shared object from node-index: {} failed", nodeIndex, ret);
-            return "get shared object from node-index: " + nodeIndex + " failed";
+            log.error("get shared object for sync leader from node-index: {} failed", nodeIndex, ret);
+            return "get shared object for sync leader from node-index: " + nodeIndex + " failed";
         }
     }
 

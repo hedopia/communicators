@@ -250,11 +250,13 @@ class ClusterServer {
                                         return ServerResponse.ok().build();
                                     });
                         })
-                        .POST("/sync-shared-object", request -> {
+                        .POST("/sync-shared-object/{nodeIndex}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
+                            int nodeIndex = Integer.parseInt(request.pathVariable("nodeIndex"));
                             return request.bodyToMono(ClusterService.SharedObject.class)
                                     .flatMap(sharedObject -> {
-                                        clusterService.syncSharedObject(sharedObject);
+                                        if (clusterStarter.nodeIndex != nodeIndex)
+                                            clusterService.syncSharedObject(sharedObject);
                                         return ServerResponse.ok().build();
                                     });
                         })

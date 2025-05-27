@@ -18,6 +18,7 @@ import feign.QueryMap;
 import feign.RequestLine;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.javatuples.Pair;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -219,8 +220,30 @@ class DriverService {
         if (!tryLock || mutex.tryLock()) {
             if (!tryLock) mutex.lock();
             try {
+                var deviceIdMap = driverStarter.getDeviceIdMap();
+                var disconnectList = new ArrayList<>();
+                for (var entry : deviceIdMap.entrySet()) {
+                    var list = deviceIds.stream().filter(deviceId -> entry.getValue().contains(deviceId)).collect(Collectors.toList());
+                    if (entry.getKey() == clusterStarter.getNodeIndex())
+                        disconnectList.addAll(list);
+                    else
+                        disconnectList.add(new Pair<>(entry.getKey(), list));
+                }
+
                 var ret = new ConcurrentHashMap<String, String>();
-                clusterStarter.parallelExecute(deviceIds, id -> ret.put(id, disconnect(id)));
+                clusterStarter.parallelExecute(disconnectList, obj -> {
+                    if (obj instanceof String) {
+                        ret.put((String) obj, disconnect((String) obj));
+                    } else {
+                        var nodeIndex = ((Pair<Integer, List<String>>) obj).getValue0();
+                        var deviceIdList = ((Pair<Integer, List<String>>) obj).getValue1();
+                        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+                                        ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).disconnect(driverBasePath, deviceIdList)),
+                                "disconnect to node-index: " + nodeIndex + ", devices: " + String.join(", ", deviceIdList));
+                        if (res != null)
+                            ret.putAll(deviceIdList.stream().collect(Collectors.toMap(id -> id, id -> errorParser(res))));
+                    }
+                });
                 driverStarter.deleteDevices(ret);
                 return ret;
             } finally {
@@ -388,7 +411,7 @@ class DriverService {
     Map<String, Map<String, Response>> getResponse(int nodeIndex) throws Throwable {
         AtomicReference<Map<String, Map<String, Response>>> ret = new AtomicReference<>();
         var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getResponse(driverBasePath)),
+                        ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getResponse(driverBasePath)),
                 "get response map for node-index: " + nodeIndex);
         if (res != null) throw res;
         return ret.get();
@@ -397,7 +420,7 @@ class DriverService {
     Map<String, Response> getResponse(int nodeIndex, String deviceId) throws Throwable {
         AtomicReference<Map<String, Response>> ret = new AtomicReference<>();
         var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getResponse(driverBasePath, deviceId)),
+                        ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getResponse(driverBasePath, deviceId)),
                 "get response for node-index: " + nodeIndex + ", device-id: " + deviceId);
         if (res != null) throw res;
         return ret.get();
@@ -410,7 +433,7 @@ class DriverService {
     Map<String, StatusCode> getDeviceStatus(int nodeIndex) throws Throwable {
         AtomicReference<Map<String, StatusCode>> ret = new AtomicReference<>();
         var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getDeviceStatus(driverBasePath)),
+                        ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getDeviceStatus(driverBasePath)),
                 "get device status map for node-index: " + nodeIndex);
         if (res != null) throw res;
         return ret.get();
@@ -494,6 +517,9 @@ class DriverService {
 
         @RequestLine("POST {driverBasePath}/connect-all-to-leader/{nodeIndex}")
         Map<String, String> connectAllToLeader(@Param("driverBasePath") String driverBasePath, @Param("nodeIndex") int nodeIndex, Set<Device> devices);
+
+        @RequestLine("GET {driverBasePath}/disconnect")
+        Map<String, String> disconnect(@Param("driverBasePath") String driverBasePath, List<String> deviceIds);
 
         @RequestLine("GET {driverBasePath}/device-status/{id}")
         StatusCode getDeviceStatus(@Param("driverBasePath") String driverBasePath, @Param("id") String id);
