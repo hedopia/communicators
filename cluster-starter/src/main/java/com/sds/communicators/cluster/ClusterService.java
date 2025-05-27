@@ -240,11 +240,11 @@ class ClusterService {
             }
         }
 
-        synchronized (syncMutex) {
-            if (clusterStarter.position == Position.LEADER) {
-                if (sharedObjectSeq.get(nodeIndex) == null || !sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))
+        if (clusterStarter.position == Position.LEADER) {
+            if (sharedObjectSeq.get(nodeIndex) == null || !sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))
+                synchronized (syncMutex) {
                     overwriteLeaderSharedObject(nodeIndex);
-            }
+                }
         }
     }
 
