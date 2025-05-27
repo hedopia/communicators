@@ -240,11 +240,11 @@ class ClusterService {
             }
         }
 
-        if (clusterStarter.position == Position.LEADER) {
-            if (sharedObjectSeq.get(nodeIndex) == null || !sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))
-                synchronized (syncMutex) {
-                    overwriteLeaderSharedObject(nodeIndex);
-                }
+        if (clusterStarter.position == Position.LEADER &&
+                (sharedObjectSeq.get(nodeIndex) == null || !sharedObjectSeq.get(nodeIndex).equals(receivedSharedObjectSeq.get(nodeIndex)))) {
+            synchronized (syncMutex) {
+                overwriteLeaderSharedObject(nodeIndex);
+            }
         }
     }
 
@@ -345,52 +345,45 @@ class ClusterService {
     }
 
     String setSharedObjectToLeader(int senderNodeIndex, SharedObjectInfo sharedObjectInfo) {
-        synchronized (syncMutex) {
-            if (clusterStarter.position == Position.LEADER) {
-                log.trace("set shared object to leader, sender-node-index: {}, shared-object-info: {}", senderNodeIndex, sharedObjectInfo);
-                var seq = sharedObjectInfo instanceof MergeSharedObjectInfo ? ((MergeSharedObjectInfo) sharedObjectInfo).seq :
-                        ((DeleteSharedObjectInfo) sharedObjectInfo).seq;
-                if (senderNodeIndex != clusterStarter.nodeIndex) {
-                    sharedObject.putIfAbsent(senderNodeIndex, new HashMap<>());
-                    sharedObjectSeq.putIfAbsent(senderNodeIndex, 0L);
-                    if (sharedObjectSeq.get(senderNodeIndex) != seq) {
-                        log.trace("set shared object to leader, shared-object-sequence mismatch for node-index: {}, leader: {}, sender: {}", senderNodeIndex, sharedObjectSeq.get(senderNodeIndex), seq);
-                        var ret = overwriteLeaderSharedObject(senderNodeIndex);
-                        if (ret != null) return ret;
-                    } else {
-                        log.trace("set shared object to leader, shared-object-sequence match for node-index: {}", senderNodeIndex);
-                        if (sharedObjectInfo instanceof MergeSharedObjectInfo)
-                            mergeObject(senderNodeIndex, ((MergeSharedObjectInfo) sharedObjectInfo).obj);
-                        else
-                            for (List<String> path : ((DeleteSharedObjectInfo) sharedObjectInfo).paths)
-                                deleteObject(senderNodeIndex, path);
-                    }
-                }
-
-                synchronized (heartbeatMutex) {
-                    log.trace("propagate shared object for node-index: {}", senderNodeIndex);
-                    var results = new ConcurrentHashMap<String, Boolean>();
-                    if (sharedObjectInfo instanceof MergeSharedObjectInfo)
-                        redirectFunction.toAllFunc(targetUrl ->
-                                        results.put(targetUrl, client.getClient(targetUrl).checkMergeSharedObject(clusterBasePath, senderNodeIndex, (MergeSharedObjectInfo) sharedObjectInfo)),
-                                "check merge shared object");
-                    else
-                        redirectFunction.toAllFunc(targetUrl ->
-                                        results.put(targetUrl, client.getClient(targetUrl).checkDeleteSharedObject(clusterBasePath, senderNodeIndex, (DeleteSharedObjectInfo) sharedObjectInfo)),
-                                "check delete shared object");
-                    var needSyncUrls = results.entrySet().stream().filter(entry -> !entry.getValue()).map(Map.Entry::getKey).collect(Collectors.toList());
-                    redirectFunction.parallelExecute(needSyncUrls, targetUrl ->
-                            client.getClient(targetUrl).overwriteSharedObject(clusterBasePath, senderNodeIndex,
-                                    new MergeSharedObjectInfo(sharedObjectSeq.get(senderNodeIndex) + 1, sharedObject.get(senderNodeIndex))));
-                    if (senderNodeIndex != clusterStarter.nodeIndex)
-                        sharedObjectSeq.put(senderNodeIndex, sharedObjectSeq.get(senderNodeIndex) + 1);
-                }
-                return null;
+        log.trace("set shared object to leader, sender-node-index: {}, shared-object-info: {}", senderNodeIndex, sharedObjectInfo);
+        var seq = sharedObjectInfo instanceof MergeSharedObjectInfo ? ((MergeSharedObjectInfo) sharedObjectInfo).seq :
+                ((DeleteSharedObjectInfo) sharedObjectInfo).seq;
+        if (senderNodeIndex != clusterStarter.nodeIndex) {
+            sharedObject.putIfAbsent(senderNodeIndex, new HashMap<>());
+            sharedObjectSeq.putIfAbsent(senderNodeIndex, 0L);
+            if (sharedObjectSeq.get(senderNodeIndex) != seq) {
+                log.trace("set shared object to leader, shared-object-sequence mismatch for node-index: {}, leader: {}, sender: {}", senderNodeIndex, sharedObjectSeq.get(senderNodeIndex), seq);
+                var ret = overwriteLeaderSharedObject(senderNodeIndex);
+                if (ret != null) return ret;
             } else {
-                log.error("set shared object to leader ignored, position is not leader, sender-node-index: {}, shared-object-info: {}", senderNodeIndex, sharedObjectInfo);
-                return "set shared object to leader ignored, position is not leader";
+                log.trace("set shared object to leader, shared-object-sequence match for node-index: {}", senderNodeIndex);
+                if (sharedObjectInfo instanceof MergeSharedObjectInfo)
+                    mergeObject(senderNodeIndex, ((MergeSharedObjectInfo) sharedObjectInfo).obj);
+                else
+                    for (List<String> path : ((DeleteSharedObjectInfo) sharedObjectInfo).paths)
+                        deleteObject(senderNodeIndex, path);
             }
         }
+
+        synchronized (heartbeatMutex) {
+            log.trace("propagate shared object for node-index: {}", senderNodeIndex);
+            var results = new ConcurrentHashMap<String, Boolean>();
+            if (sharedObjectInfo instanceof MergeSharedObjectInfo)
+                redirectFunction.toAllFunc(targetUrl ->
+                                results.put(targetUrl, client.getClient(targetUrl).checkMergeSharedObject(clusterBasePath, senderNodeIndex, (MergeSharedObjectInfo) sharedObjectInfo)),
+                        "check merge shared object");
+            else
+                redirectFunction.toAllFunc(targetUrl ->
+                                results.put(targetUrl, client.getClient(targetUrl).checkDeleteSharedObject(clusterBasePath, senderNodeIndex, (DeleteSharedObjectInfo) sharedObjectInfo)),
+                        "check delete shared object");
+            var needSyncUrls = results.entrySet().stream().filter(entry -> !entry.getValue()).map(Map.Entry::getKey).collect(Collectors.toList());
+            redirectFunction.parallelExecute(needSyncUrls, targetUrl ->
+                    client.getClient(targetUrl).overwriteSharedObject(clusterBasePath, senderNodeIndex,
+                            new MergeSharedObjectInfo(sharedObjectSeq.get(senderNodeIndex) + 1, sharedObject.get(senderNodeIndex))));
+            if (senderNodeIndex != clusterStarter.nodeIndex)
+                sharedObjectSeq.put(senderNodeIndex, sharedObjectSeq.get(senderNodeIndex) + 1);
+        }
+        return null;
     }
 
     void syncSharedObject(SharedObject object) {
