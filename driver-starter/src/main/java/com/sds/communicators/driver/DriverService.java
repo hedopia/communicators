@@ -518,7 +518,7 @@ class DriverService {
         @RequestLine("POST {driverBasePath}/connect-all-to-leader/{nodeIndex}")
         Map<String, String> connectAllToLeader(@Param("driverBasePath") String driverBasePath, @Param("nodeIndex") int nodeIndex, Set<Device> devices);
 
-        @RequestLine("GET {driverBasePath}/disconnect")
+        @RequestLine("DELETE {driverBasePath}/disconnect")
         Map<String, String> disconnect(@Param("driverBasePath") String driverBasePath, List<String> deviceIds);
 
         @RequestLine("GET {driverBasePath}/device-status/{id}")
