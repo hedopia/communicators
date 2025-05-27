@@ -224,10 +224,12 @@ class DriverService {
                 var disconnectList = new ArrayList<>();
                 for (var entry : deviceIdMap.entrySet()) {
                     var list = deviceIds.stream().filter(deviceId -> entry.getValue().contains(deviceId)).collect(Collectors.toList());
-                    if (entry.getKey() == clusterStarter.getNodeIndex())
-                        disconnectList.addAll(list);
-                    else
-                        disconnectList.add(new Pair<>(entry.getKey(), list));
+                    if (!list.isEmpty()) {
+                        if (entry.getKey() == clusterStarter.getNodeIndex())
+                            disconnectList.addAll(list);
+                        else
+                            disconnectList.add(new Pair<>(entry.getKey(), list));
+                    }
                 }
 
                 var ret = new ConcurrentHashMap<String, String>();
