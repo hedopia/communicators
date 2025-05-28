@@ -409,7 +409,7 @@ class ClusterService {
     }
 
     void overwriteSharedObject(int nodeIndex, MergeSharedObjectInfo sharedObjectInfo) {
-        log.debug("overwrite shared-object, sender-node-index: {}, shared-object-info: {}", nodeIndex, sharedObjectInfo);
+        log.info("overwrite shared-object, sender-node-index: {}, shared-object-info: {}", nodeIndex, sharedObjectInfo);
         sharedObject.put(nodeIndex, sharedObjectInfo.obj);
         sharedObjectSeq.put(nodeIndex, sharedObjectInfo.seq);
         Schedulers.io().scheduleDirect(() -> {

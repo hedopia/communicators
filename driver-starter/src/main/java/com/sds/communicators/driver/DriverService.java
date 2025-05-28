@@ -402,13 +402,13 @@ class DriverService {
                         balancedConnectAll(deviceSet);
                     }
                 })
-                .overwritten("disconnect duplicated devices", nodeIndex -> {
-                    log.info("disconnect duplicated devices for node-index: {}", nodeIndex);
+                .overwritten("check duplicated devices", nodeIndex -> {
                     var deviceIdMap = driverStarter.getDeviceIdMap();
                     for (var entry : deviceIdMap.entrySet()) {
                         var intersection = new HashSet<>(driverProtocols.keySet());
                         intersection.retainAll(entry.getValue());
                         if (!intersection.isEmpty()) {
+                            log.info("disconnect duplicated devices: {}", String.join(", ", intersection));
                             var reconnectList = driverProtocols.entrySet().stream()
                                     .filter(kv -> intersection.contains(kv.getKey()))
                                     .collect(Collectors.toMap(Map.Entry::getKey, kv -> kv.getValue().device));
