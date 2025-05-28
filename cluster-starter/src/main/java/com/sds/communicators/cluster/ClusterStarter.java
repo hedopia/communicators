@@ -118,16 +118,16 @@ public class ClusterStarter {
     }
 
     private ClusterStarter(Set<String> nodeTargetUrls,
-                          int serverPort,
-                          int nodeIndex,
-                          int quorum,
-                          int leaderLostTimeoutSeconds,
-                          int heartbeatSendingIntervalMillis,
-                          ClusterEvents clusterEvents,
-                          RouterFunctions.Builder routerFunctionBuilder,
-                          String clusterBasePath,
-                          int connectTimeoutMillis,
-                          int readTimeoutMillis) throws Exception {
+                           int serverPort,
+                           int nodeIndex,
+                           int quorum,
+                           int leaderLostTimeoutSeconds,
+                           int heartbeatSendingIntervalMillis,
+                           ClusterEvents clusterEvents,
+                           RouterFunctions.Builder routerFunctionBuilder,
+                           String clusterBasePath,
+                           int connectTimeoutMillis,
+                           int readTimeoutMillis) throws Exception {
         clusterClient = new ClusterClient(connectTimeoutMillis, readTimeoutMillis);
         this.nodeIndex = nodeIndex;
         this.quorum = quorum;
@@ -143,7 +143,7 @@ public class ClusterStarter {
                 })
                 .route(routes ->
                         routes.get("/index",
-                                        (request, response) -> response.sendString(Mono.just(Integer.toString(nodeIndex))))
+                                (request, response) -> response.sendString(Mono.just(Integer.toString(nodeIndex))))
                 )
                 .bindNow();
         Set<String> nodeUrls = new HashSet<>();

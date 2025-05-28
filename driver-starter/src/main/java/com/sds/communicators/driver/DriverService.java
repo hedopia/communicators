@@ -99,14 +99,14 @@ class DriverService {
                 }
                 if (nodeIndex == clusterStarter.getNodeIndex()) {
                     if (!deviceSet.isEmpty())
-                        ret.putAll(connectAll(deviceSet));
+                        ret.putAll(connectAll(deviceSet, false));
                 } else {
                     var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                                     ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToIndex(driverBasePath, deviceSet)),
                             "connect all to node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(deviceSet));
                     if (result != null) {
                         log.error("connect all to node-index: {} failed, connect to leader, devices: {}", nodeIndex, UtilFunc.joinDeviceId(deviceSet), result);
-                        ret.putAll(connectAll(deviceSet));
+                        ret.putAll(connectAll(deviceSet, false));
                     }
                 }
                 return ret;
@@ -132,9 +132,12 @@ class DriverService {
      *
      * @param devices device set
      */
-    Map<String, String> connectAll(Set<Device> devices) {
+    Map<String, String> connectAll(Set<Device> devices, boolean tryLock) {
         log.info("try to connect all: {}", UtilFunc.joinDeviceId(devices));
-        if (mutex.tryLock()) {
+        if (devices.isEmpty())
+            return new HashMap<>();
+        if (!tryLock || mutex.tryLock()) {
+            if (!tryLock) mutex.lock();
             try {
                 var ret = new ConcurrentHashMap<String, String>();
                 var protocols = new ArrayList<DriverProtocol>();

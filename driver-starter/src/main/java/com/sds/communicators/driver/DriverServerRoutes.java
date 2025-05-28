@@ -36,7 +36,7 @@ class DriverServerRoutes {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             return request.bodyToMono(new ParameterizedTypeReference<Set<Device>>() {})
                                     .flatMap(devices -> ServerResponse.ok()
-                                            .bodyValue(driverService.connectAll(devices)));
+                                            .bodyValue(driverService.connectAll(devices, true)));
                         })
                         .POST("/connect-all-to-leader/{nodeIndex}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
