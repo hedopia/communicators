@@ -55,7 +55,7 @@ class DriverServerRoutes {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             return request.bodyToMono(new ParameterizedTypeReference<List<String>>() {})
                                     .flatMap(deviceIds -> {
-                                        var ret = driverService.disconnectList(deviceIds, true);
+                                        var ret = driverService.disconnectList(deviceIds, true, false);
                                         return ret == null ?
                                                 ServerResponse.badRequest().bodyValue("device registering process is busy")
                                                 : ServerResponse.ok().bodyValue(ret);

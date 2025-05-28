@@ -215,7 +215,7 @@ class DriverService {
         }
     }
 
-    Map<String, String> disconnectList(Collection<String> deviceIds, boolean tryLock) {
+    Map<String, String> disconnectList(Collection<String> deviceIds, boolean tryLock, boolean isSelfDevices) {
         log.info("[{}] try to disconnect list", String.join(",", deviceIds));
         if (deviceIds.isEmpty())
             return new HashMap<>();
@@ -227,10 +227,12 @@ class DriverService {
                 for (var entry : deviceIdMap.entrySet()) {
                     var list = deviceIds.stream().filter(deviceId -> entry.getValue().contains(deviceId)).collect(Collectors.toList());
                     if (!list.isEmpty()) {
-                        if (entry.getKey() == clusterStarter.getNodeIndex())
+                        if (entry.getKey() == clusterStarter.getNodeIndex()) {
                             disconnectList.addAll(list);
-                        else
-                            disconnectList.add(new Pair<>(entry.getKey(), list));
+                        } else {
+                            if (!isSelfDevices)
+                                disconnectList.add(new Pair<>(entry.getKey(), list));
+                        }
                     }
                 }
 
@@ -261,7 +263,7 @@ class DriverService {
 
     Map<String, String> disconnectAll(boolean tryLock) {
         log.info("try to disconnect all");
-        return disconnectList(driverProtocols.keySet(), tryLock);
+        return disconnectList(driverProtocols.keySet(), tryLock, true);
     }
 
     Object executeCommandIdsOnThread(String deviceId, List<String> commandIdList, String initialValue, boolean isResponseOutput) {
@@ -410,7 +412,7 @@ class DriverService {
                             var reconnectList = driverProtocols.entrySet().stream()
                                     .filter(kv -> intersection.contains(kv.getKey()))
                                     .collect(Collectors.toMap(Map.Entry::getKey, kv -> kv.getValue().device));
-                            disconnectList(reconnectList.keySet(), false);
+                            disconnectList(reconnectList.keySet(), false, true);
                             balancedConnectAll(new HashSet<>(reconnectList.values()));
                         }
                     }
