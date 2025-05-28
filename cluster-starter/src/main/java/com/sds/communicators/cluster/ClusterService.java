@@ -113,10 +113,10 @@ class ClusterService {
                 long begin = System.currentTimeMillis();
                 if (clusterStarter.position == Position.LEADER) {
                     synchronized (syncMutex) {
-                        sendHeartbeat(clusterStarter.position);
+                        sendHeartbeat(Position.LEADER);
                     }
                 } else {
-                    sendHeartbeat(clusterStarter.position);
+                    sendHeartbeat(Position.FOLLOWER);
                 }
                 log.trace("send heartbeat success, elapsed time: {}[ms]", System.currentTimeMillis() - begin);
             } catch (Exception e) {
