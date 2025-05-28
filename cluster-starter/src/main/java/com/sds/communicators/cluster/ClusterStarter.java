@@ -251,6 +251,10 @@ public class ClusterStarter {
         clusterService.forceToFollower();
     }
 
+    public void toLeaderFuncConfirmed(Consumer<String> consumer, String name) {
+        redirectFunction.toLeaderFuncConfirmed(consumer, name);
+    }
+
     public Throwable toLeaderFunc(Consumer<String> consumer, String name) {
         return redirectFunction.toLeaderFunc(consumer, name);
     }

@@ -113,11 +113,9 @@ class DriverService {
             }
         } else {
             var ret = new HashMap<String, String>();
-            var result = clusterStarter.toLeaderFunc(targetUrl ->
+            clusterStarter.toLeaderFuncConfirmed(targetUrl ->
                             ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToLeader(driverBasePath, nodeIndex, devices)),
                     "connect all to leader for node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(devices));
-            if (result != null)
-                return devices.stream().collect(Collectors.toMap(Device::getId, device -> errorParser(result)));
             return ret;
         }
     }
