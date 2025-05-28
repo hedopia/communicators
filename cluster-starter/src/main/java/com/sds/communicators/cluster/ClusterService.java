@@ -51,7 +51,7 @@ class ClusterService {
     void start() throws InterruptedException {
         sharedObject.put(clusterStarter.nodeIndex, new HashMap<>());
         sharedObjectSeq.put(clusterStarter.nodeIndex, 0L);
-        long initialDelay = (long)(clusterStarter.leaderLostTimeoutSeconds * 1.5);
+        long initialDelay = clusterStarter.leaderLostTimeoutSeconds;
         log.info("cluster application preparing for {}[sec]", initialDelay);
 
         Thread.sleep(initialDelay * 1000);
