@@ -70,8 +70,8 @@ class ClusterClient {
     }
 
     interface ClusterClientApi {
-        @RequestLine("PUT {clusterBasePath}/heartbeat/{nodeIndex}/{position}")
-        void heartbeat(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, @Param("position") Position position, Map<Integer, Long> sharedObjectSeq);
+        @RequestLine("PUT {clusterBasePath}/heartbeat/{nodeIndex}/{position}/{lastTransitionTime}")
+        void heartbeat(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, @Param("position") Position position, @Param("lastTransitionTime") long lastTransitionTime, Map<Integer, Long> sharedObjectSeq);
 
         @RequestLine("GET {clusterBasePath}/node-status")
         NodeStatus getNodeStatus(@Param("clusterBasePath") String clusterBasePath);

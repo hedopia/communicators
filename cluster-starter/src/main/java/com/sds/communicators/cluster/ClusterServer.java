@@ -161,14 +161,15 @@ class ClusterServer {
     private RouterFunctions.Builder internal(RouterFunctions.Builder routerFunctionBuilder, String clusterBasePath) {
         return routerFunctionBuilder.path(clusterBasePath, builder ->
                 builder
-                        .PUT("/heartbeat/{nodeIndex}/{position}", request -> {
+                        .PUT("/heartbeat/{nodeIndex}/{position}/{lastTransitionTime}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             int nodeIndex = Integer.parseInt(request.pathVariable("nodeIndex"));
+                            long lastTransitionTime = Long.parseLong(request.pathVariable("lastTransitionTime"));
                             Position position = Position.valueOf(Position.class, request.pathVariable("position"));
                             return request.bodyToMono(new ParameterizedTypeReference<Map<Integer, Long>>() {})
                                     .flatMap(sharedObjectSeq -> {
                                                 if (clusterStarter.nodeIndex != nodeIndex)
-                                                    clusterService.heartbeatReceived(nodeIndex, position, sharedObjectSeq);
+                                                    clusterService.heartbeatReceived(nodeIndex, position, lastTransitionTime, sharedObjectSeq);
                                                 return ServerResponse.ok().build();
                                             }
                                     );

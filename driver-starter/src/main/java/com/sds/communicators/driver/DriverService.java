@@ -101,21 +101,23 @@ class DriverService {
                     if (!deviceSet.isEmpty())
                         ret.putAll(connectAll(deviceSet));
                 } else {
-                    var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+                    var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                                     ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToIndex(driverBasePath, deviceSet)),
                             "connect all to node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(deviceSet));
-                    if (res != null)
-                        ret.putAll(deviceSet.stream().collect(Collectors.toMap(Device::getId, device -> errorParser(res))));
+                    if (result != null) {
+                        log.error("connect all to node-index: {} failed, connect to leader, devices: {}", nodeIndex, UtilFunc.joinDeviceId(deviceSet), result);
+                        ret.putAll(connectAll(deviceSet));
+                    }
                 }
                 return ret;
             }
         } else {
             var ret = new HashMap<String, String>();
-            var res = clusterStarter.toLeaderFunc(targetUrl ->
+            var result = clusterStarter.toLeaderFunc(targetUrl ->
                             ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToLeader(driverBasePath, nodeIndex, devices)),
                     "connect all to leader for node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(devices));
-            if (res != null)
-                return devices.stream().collect(Collectors.toMap(Device::getId, device -> errorParser(res)));
+            if (result != null)
+                return devices.stream().collect(Collectors.toMap(Device::getId, device -> errorParser(result)));
             return ret;
         }
     }
@@ -217,6 +219,8 @@ class DriverService {
 
     Map<String, String> disconnectList(Collection<String> deviceIds, boolean tryLock) {
         log.info("[{}] try to disconnect list", String.join(",", deviceIds));
+        if (deviceIds.isEmpty())
+            return new HashMap<>();
         if (!tryLock || mutex.tryLock()) {
             if (!tryLock) mutex.lock();
             try {
@@ -239,11 +243,11 @@ class DriverService {
                     } else {
                         var nodeIndex = ((Pair<Integer, List<String>>) obj).getValue0();
                         var deviceIdList = ((Pair<Integer, List<String>>) obj).getValue1();
-                        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+                        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                                         ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).disconnect(driverBasePath, deviceIdList)),
                                 "disconnect to node-index: " + nodeIndex + ", devices: " + String.join(", ", deviceIdList));
-                        if (res != null)
-                            ret.putAll(deviceIdList.stream().collect(Collectors.toMap(id -> id, id -> errorParser(res))));
+                        if (result != null)
+                            ret.putAll(deviceIdList.stream().collect(Collectors.toMap(id -> id, id -> errorParser(result))));
                     }
                 });
                 driverStarter.deleteDevices(ret);
@@ -398,13 +402,18 @@ class DriverService {
                         balancedConnectAll(deviceSet);
                     }
                 })
-                .overwritten("disconnect duplicated devices", () -> {
+                .overwritten("disconnect duplicated devices", nodeIndex -> {
+                    log.info("disconnect duplicated devices for node-index: {}", nodeIndex);
                     var deviceIdMap = driverStarter.getDeviceIdMap();
                     for (var entry : deviceIdMap.entrySet()) {
-                        if (entry.getKey() < clusterStarter.getNodeIndex()) {
-                            var intersection = new HashSet<>(deviceIdMap.get(clusterStarter.getNodeIndex()));
-                            intersection.retainAll(entry.getValue());
-                            disconnectList(intersection, false);
+                        var intersection = new HashSet<>(driverProtocols.keySet());
+                        intersection.retainAll(entry.getValue());
+                        if (!intersection.isEmpty()) {
+                            var reconnectList = driverProtocols.entrySet().stream()
+                                    .filter(kv -> intersection.contains(kv.getKey()))
+                                    .collect(Collectors.toMap(Map.Entry::getKey, kv -> kv.getValue().device));
+                            disconnectList(reconnectList.keySet(), false);
+                            balancedConnectAll(new HashSet<>(reconnectList.values()));
                         }
                     }
                 });
@@ -412,19 +421,19 @@ class DriverService {
 
     Map<String, Map<String, Response>> getResponse(int nodeIndex) throws Throwable {
         AtomicReference<Map<String, Map<String, Response>>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getResponse(driverBasePath)),
                 "get response map for node-index: " + nodeIndex);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
     Map<String, Response> getResponse(int nodeIndex, String deviceId) throws Throwable {
         AtomicReference<Map<String, Response>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getResponse(driverBasePath, deviceId)),
                 "get response for node-index: " + nodeIndex + ", device-id: " + deviceId);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
@@ -434,18 +443,18 @@ class DriverService {
 
     Map<String, StatusCode> getDeviceStatus(int nodeIndex) throws Throwable {
         AtomicReference<Map<String, StatusCode>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getDeviceStatus(driverBasePath)),
                 "get device status map for node-index: " + nodeIndex);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
     StatusCode getDeviceStatus(int nodeIndex, String deviceId) throws Throwable {
         AtomicReference<StatusCode> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                 ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).getDeviceStatus(driverBasePath, deviceId)), "get device status for node-index: " + nodeIndex + ", device-id: " + deviceId);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
@@ -467,49 +476,49 @@ class DriverService {
 
     List<Response> executeCommands(int nodeIndex, String deviceId, String initialValue, Set<Command> commands) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).executeCommands(driverBasePath,
                                 deviceId,
                                 ImmutableMap.of("initial-value", initialValue),
                                 commands)),
                 "execute commands for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + UtilFunc.joinCommandId(commands));
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
     List<Response> requestCommands(int nodeIndex, String deviceId, String initialValue, Set<Command> commands) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).requestCommands(driverBasePath,
                                 deviceId,
                                 ImmutableMap.of("initial-value", initialValue),
                                 commands)),
                 "request commands for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + UtilFunc.joinCommandId(commands));
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
     List<Response> executeCommandIds(int nodeIndex, String deviceId, String initialValue, List<String> commandIdList) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).executeCommandIds(driverBasePath,
                                 deviceId,
                                 ImmutableMap.of("initial-value", initialValue),
                                 commandIdList)),
                 "execute command ids for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + commandIdList);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
     List<Response> requestCommandIds(int nodeIndex, String deviceId, String initialValue, List<String> commandIdList) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
-        var res = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                         ret.set(clusterStarter.getClient(targetUrl, DriverClientApi.class).requestCommandIds(driverBasePath,
                                 deviceId,
                                 ImmutableMap.of("initial-value", initialValue),
                                 commandIdList)),
                 "request command ids for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + commandIdList);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 

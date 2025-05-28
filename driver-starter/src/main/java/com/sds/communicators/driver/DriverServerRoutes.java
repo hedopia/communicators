@@ -71,9 +71,9 @@ class DriverServerRoutes {
                         })
                         .GET("/device-status", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
-                            var res = driverService.driverProtocols.entrySet().stream()
+                            var result = driverService.driverProtocols.entrySet().stream()
                                     .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getStatus()));
-                            return ServerResponse.ok().bodyValue(res);
+                            return ServerResponse.ok().bodyValue(result);
                         })
                         .GET("/device-id-map", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));

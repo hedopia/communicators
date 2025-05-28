@@ -17,7 +17,7 @@ public class ClusterEvents {
     final List<Pair<String, Action>> becomeFollowerEvents = new ArrayList<>();
     final List<Pair<String, Consumer<Integer>>> clusterAddedEvents = new ArrayList<>();
     final List<Pair<String, BiConsumer<Integer, Map<String, Object>>>> clusterDeletedEvents = new ArrayList<>();
-    final List<Pair<String, Action>> overwrittenEvents = new ArrayList<>();
+    final List<Pair<String, Consumer<Integer>>> overwrittenEvents = new ArrayList<>();
 
     public ClusterEvents addAll(ClusterEvents clusterEvents) {
         if (clusterEvents != null) {
@@ -62,7 +62,7 @@ public class ClusterEvents {
         return this;
     }
 
-    public ClusterEvents overwritten(String id, Action action) {
+    public ClusterEvents overwritten(String id, Consumer<Integer> action) {
         overwrittenEvents.add(new Pair<>(id, action));
         return this;
     }

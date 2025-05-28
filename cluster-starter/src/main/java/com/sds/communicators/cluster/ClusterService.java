@@ -100,14 +100,14 @@ class ClusterService {
 
     Position getPosition(int nodeIndex) throws Throwable {
         AtomicReference<Position> ret = new AtomicReference<>();
-        var res = redirectFunction.toIndexFunc(nodeIndex, targetUrl ->
+        var result = redirectFunction.toIndexFunc(nodeIndex, targetUrl ->
                 ret.set(client.getClient(targetUrl).getNodeStatus(clusterBasePath).getPosition()), "get position for node-index: " + nodeIndex);
-        if (res != null) throw res;
+        if (result != null) throw result;
         return ret.get();
     }
 
     private void heartbeat() {
-        log.info("position: {} (last transition time: {})", clusterStarter.position, lastTransitionTime.toString());
+        log.info("position: {} (last transition time: {})", clusterStarter.position, lastTransitionTime);
         Schedulers.io().scheduleDirect(() -> {
             try {
                 long begin = System.currentTimeMillis();
@@ -131,6 +131,7 @@ class ClusterService {
                         clusterBasePath,
                         clusterStarter.nodeIndex,
                         position,
+                        lastTransitionTime.toInstant().toEpochMilli(),
                         sharedObjectSeq), "send heartbeat");
     }
 
@@ -188,14 +189,16 @@ class ClusterService {
         }
     }
 
-    void heartbeatReceived(int nodeIndex, Position position, Map<Integer, Long> receivedSharedObjectSeq) {
+    void heartbeatReceived(int nodeIndex, Position position, long lastTransitionTime, Map<Integer, Long> receivedSharedObjectSeq) {
+        log.debug("heartbeat received from node-index: {}, position: {}", nodeIndex, position);
         if (initialPosition && position == Position.LEADER)
             initialPosition = false;
 
         if (clusterStarter.position == Position.LEADER &&
-                nodeIndex < clusterStarter.nodeIndex &&
-                position == Position.LEADER) {
-            log.error("unexpected leader heartbeat received from node-index: {}, set to follower", nodeIndex);
+                position == Position.LEADER &&
+                (lastTransitionTime < this.lastTransitionTime.toInstant().toEpochMilli() ||
+                        (lastTransitionTime == this.lastTransitionTime.toInstant().toEpochMilli() && nodeIndex < clusterStarter.nodeIndex))) {
+            log.warn("unexpected leader heartbeat received from node-index: {}, set to follower", nodeIndex);
             transition(Position.FOLLOWER);
 
             synchronized (syncMutex) {
@@ -412,9 +415,9 @@ class ClusterService {
         Schedulers.io().scheduleDirect(() -> {
             for (var action : clusterEvents.overwrittenEvents) {
                 try {
-                    action.getValue1().run();
+                    action.getValue1().accept(nodeIndex);
                 } catch (Throwable e) {
-                    log.error("overwritten events [{}] failed", action.getValue0(), e);
+                    log.error("overwritten events [{}] for node-index: {} failed", action.getValue0(), nodeIndex, e);
                 }
             }
         });

@@ -146,44 +146,44 @@ public class DriverProtocolModbusClient extends DriverProtocol {
     private List<?> read(int address, int length, int unitId, int timeout, ModbusRead.Type type) throws Exception {
         if (type == ModbusRead.Type.COIL) {
             try {
-                var res = (ReadCoilsResponse)master.sendRequest(new ReadCoilsRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                var result = (ReadCoilsResponse)master.sendRequest(new ReadCoilsRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
                 try {
-                    return readBits(res.getCoilStatus(), length);
+                    return readBits(result.getCoilStatus(), length);
                 } finally {
-                    res.release();
+                    result.release();
                 }
             } catch (Exception e) {
                 throw new Exception("ReadCoilsRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         } else if (type == ModbusRead.Type.DISCRETE_INPUT) {
             try {
-                var res = (ReadDiscreteInputsResponse)master.sendRequest(new ReadDiscreteInputsRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                var result = (ReadDiscreteInputsResponse)master.sendRequest(new ReadDiscreteInputsRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
                 try {
-                    return readBits(res.getInputStatus(), length);
+                    return readBits(result.getInputStatus(), length);
                 } finally {
-                    res.release();
+                    result.release();
                 }
             } catch (Exception e) {
                 throw new Exception("ReadDiscreteInputsRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         } else if (type == ModbusRead.Type.INPUT_REGISTER) {
             try {
-                var res = (ReadInputRegistersResponse)master.sendRequest(new ReadInputRegistersRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                var result = (ReadInputRegistersResponse)master.sendRequest(new ReadInputRegistersRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
                 try {
-                    return readRegister(res.getRegisters());
+                    return readRegister(result.getRegisters());
                 } finally {
-                    res.release();
+                    result.release();
                 }
             } catch (Exception e) {
                 throw new Exception("ReadInputRegistersRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         } else {
             try {
-                var res = (ReadHoldingRegistersResponse)master.sendRequest(new ReadHoldingRegistersRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                var result = (ReadHoldingRegistersResponse)master.sendRequest(new ReadHoldingRegistersRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
                 try {
-                    return readRegister(res.getRegisters());
+                    return readRegister(result.getRegisters());
                 } finally {
-                    res.release();
+                    result.release();
                 }
             } catch (Exception e) {
                 throw new Exception("ReadHoldingRegistersRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);

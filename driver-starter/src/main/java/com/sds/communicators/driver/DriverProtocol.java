@@ -413,33 +413,33 @@ abstract class DriverProtocol {
     public List<Response> executeCommands(String deviceId, String initialValue, Set<Command> commands) throws Exception {
         if (this.deviceId.equals(deviceId))
             throw new Exception("execute commands for self device not allowed");
-        var res = driverService.executeCommands(deviceId, commands, initialValue, false);
-        if (res instanceof String) throw new Exception((String) res);
-        return (List<Response>) res;
+        var result = driverService.executeCommands(deviceId, commands, initialValue, false);
+        if (result instanceof String) throw new Exception((String) result);
+        return (List<Response>) result;
     }
 
     public List<Response> requestCommands(String deviceId, String initialValue, Set<Command> commands) throws Exception {
         if (this.deviceId.equals(deviceId))
             throw new Exception("execute commands for self device not allowed");
-        var res = driverService.executeCommands(deviceId, commands, initialValue, true);
-        if (res instanceof String) throw new Exception((String) res);
-        return (List<Response>) res;
+        var result = driverService.executeCommands(deviceId, commands, initialValue, true);
+        if (result instanceof String) throw new Exception((String) result);
+        return (List<Response>) result;
     }
 
     public List<Response> executeCommandIds(String deviceId, String initialValue, List<String> commandIdList) throws Exception {
         if (this.deviceId.equals(deviceId))
             throw new Exception("execute commands for self device not allowed");
-        var res = driverService.executeCommandIds(deviceId, commandIdList, initialValue, true);
-        if (res instanceof String) throw new Exception((String) res);
-        return (List<Response>) res;
+        var result = driverService.executeCommandIds(deviceId, commandIdList, initialValue, true);
+        if (result instanceof String) throw new Exception((String) result);
+        return (List<Response>) result;
     }
 
     public List<Response> requestCommandIds(String deviceId, String initialValue, List<String> commandIdList) throws Exception {
         if (this.deviceId.equals(deviceId))
             throw new Exception("execute commands for self device not allowed");
-        var res = driverService.executeCommandIds(deviceId, commandIdList, initialValue, true);
-        if (res instanceof String) throw new Exception((String) res);
-        return (List<Response>) res;
+        var result = driverService.executeCommandIds(deviceId, commandIdList, initialValue, true);
+        if (result instanceof String) throw new Exception((String) result);
+        return (List<Response>) result;
     }
 
     public List<Response> executeCommands(int nodeIndex, String deviceId, String initialValue, Set<Command> commands) throws Throwable {
