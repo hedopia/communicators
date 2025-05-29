@@ -541,8 +541,8 @@ class DriverService {
         @RequestLine("DELETE {driverBasePath}/disconnect")
         Map<String, String> disconnect(@Param("driverBasePath") String driverBasePath, List<String> deviceIds);
 
-        @RequestLine("DELETE {driverBasePath}/reconnect-all")
-        Map<String, String> reconnectAll(@Param("driverBasePath") String driverBasePath);
+        @RequestLine("PUT {driverBasePath}/reconnect-all")
+        void reconnectAll(@Param("driverBasePath") String driverBasePath);
 
         @RequestLine("GET {driverBasePath}/device-status/{id}")
         StatusCode getDeviceStatus(@Param("driverBasePath") String driverBasePath, @Param("id") String id);
