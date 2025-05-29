@@ -39,7 +39,6 @@ class DriverCommand {
         pythonInterpreter.exec("from com.sds.communicators.common import UtilFunc");
         pythonInterpreter.exec("import java");
         pythonInterpreter.exec(defaultScript);
-
     }
 
     void dispose() {

@@ -54,6 +54,10 @@ class DriverServerRoutes {
                                     .flatMap(deviceIds ->
                                             ServerResponse.ok().bodyValue(driverService.disconnectList(deviceIds, false)));
                         })
+                        .PUT("/reconnect-all", request -> {
+                            log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
+                            return ServerResponse.ok().bodyValue(driverService.reconnectAll());
+                        })
                         .GET("/device-status/{deviceId}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             String deviceId = request.pathVariable("deviceId");

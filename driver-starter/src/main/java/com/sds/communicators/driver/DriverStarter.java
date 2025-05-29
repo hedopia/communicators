@@ -36,6 +36,7 @@ public abstract class DriverStarter {
      * load balancing mode
      */
     private final boolean loadBalancing;
+    final boolean reconnectWhenSplitBrainResolved;
     final String defaultScript;
     final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -50,6 +51,7 @@ public abstract class DriverStarter {
     public static abstract class Builder {
         protected final String driverId;
         protected boolean loadBalancing;
+        protected boolean reconnectWhenSplitBrainResolved;
         protected String defaultScript;
         protected DriverEvents driverEvents;
         protected String driverBasePath;
@@ -60,6 +62,7 @@ public abstract class DriverStarter {
         protected Builder(String driverId, ClusterStarter.Builder clusterStarterBuilder) {
             this.driverId = driverId;
             this.loadBalancing = true;
+            this.reconnectWhenSplitBrainResolved = false;
             this.defaultScript = "";
             this.driverEvents = null;
             this.driverBasePath = "/driver";
@@ -70,6 +73,11 @@ public abstract class DriverStarter {
 
         public DriverStarter.Builder setLoadBalancing(boolean loadBalancing) {
             this.loadBalancing = loadBalancing;
+            return this;
+        }
+
+        public DriverStarter.Builder setReconnectWhenSplitBrainResolved(boolean reconnectWhenSplitBrainResolved) {
+            this.reconnectWhenSplitBrainResolved = reconnectWhenSplitBrainResolved;
             return this;
         }
 
@@ -103,6 +111,7 @@ public abstract class DriverStarter {
 
     DriverStarter(String driverId,
                   boolean loadBalancing,
+                  boolean reconnectWhenSplitBrainResolved,
                   String defaultScript,
                   DriverEvents driverEvents,
                   String driverBasePath,
@@ -113,6 +122,7 @@ public abstract class DriverStarter {
         initializeTempFiles();
         this.driverId = driverId;
         this.loadBalancing = loadBalancing;
+        this.reconnectWhenSplitBrainResolved = reconnectWhenSplitBrainResolved;
         this.defaultScript = defaultScript;
         driverService = new DriverService(this, driverBasePath);
         clusterStarter = clusterStarterBuilder

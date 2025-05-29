@@ -26,6 +26,7 @@ public class DriverStarterNoneOutput extends DriverStarter {
             return new DriverStarterNoneOutput(
                     driverId,
                     loadBalancing,
+                    reconnectWhenSplitBrainResolved,
                     defaultScript,
                     driverEvents,
                     driverBasePath,
@@ -37,6 +38,7 @@ public class DriverStarterNoneOutput extends DriverStarter {
 
     private DriverStarterNoneOutput(String driverId,
                             boolean loadBalancing,
+                            boolean reconnectWhenSplitBrainResolved,
                             String defaultScript,
                             DriverEvents driverEvents,
                             String driverBasePath,
@@ -45,6 +47,7 @@ public class DriverStarterNoneOutput extends DriverStarter {
                             ClusterStarter.Builder clusterStarterBuilder) throws Exception {
         super(driverId,
                 loadBalancing,
+                reconnectWhenSplitBrainResolved,
                 defaultScript,
                 driverEvents,
                 driverBasePath,

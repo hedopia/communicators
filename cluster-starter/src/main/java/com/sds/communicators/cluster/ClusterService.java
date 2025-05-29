@@ -390,7 +390,7 @@ class ClusterService {
     }
 
     void syncSharedObject(SharedObject object) {
-        log.debug("synchronize split brain nodes start");
+        log.warn("synchronize split brain nodes start");
         for (var nodeIndex : object.sharedObject.keySet()) {
             if (!sharedObject.containsKey(nodeIndex))
                 overwriteSharedObject(nodeIndex,

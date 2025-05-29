@@ -249,6 +249,24 @@ class DriverService {
         return disconnectList(driverProtocols.keySet(), true);
     }
 
+    Map<String, String> reconnectAll() {
+        log.info("try to reconnect all");
+        synchronized (driverMutex) {
+            var ret = new ConcurrentHashMap<String, String>();
+            clusterStarter.parallelExecute(driverProtocols.entrySet(), entry -> {
+                var result = entry.getValue().changeStatus(StatusCode.DISCONNECTED);
+                if (result == null) {
+                    var protocol = DriverProtocol.build(this, new DriverCommand(driverStarter.defaultScript), entry.getValue().device);
+                    driverProtocols.put(entry.getKey(), protocol);
+                    ret.put(entry.getKey(), Objects.requireNonNullElse(protocol.changeStatus(StatusCode.CONNECTING), "connected"));
+                } else {
+                    ret.put(entry.getKey(), result);
+                }
+            });
+            return ret;
+        }
+    }
+
     Object executeCommandIdsOnThread(String deviceId, List<String> commandIdList, String initialValue, boolean isResponseOutput) {
         AtomicReference<Object> ret = new AtomicReference<>();
         clusterStarter.syncExecute(() -> ret.set(executeCommandIds(deviceId, commandIdList, initialValue, isResponseOutput)));
@@ -399,6 +417,14 @@ class DriverService {
                             balancedConnectAll(new HashSet<>(reconnectList.values()));
                         }
                     }
+                })
+                .splitBrainResolved("reconnect all of devices", () -> {
+                    if (driverStarter.reconnectWhenSplitBrainResolved) {
+                        log.warn("reconnect all of devices in cluster nodes after split brain resolved");
+                        clusterStarter.toAllFunc(targetUrl ->
+                                        clusterStarter.getClient(targetUrl, DriverClientApi.class).reconnectAll(driverBasePath),
+                                "reconnect all");
+                    }
                 });
     }
 
@@ -514,6 +540,9 @@ class DriverService {
 
         @RequestLine("DELETE {driverBasePath}/disconnect")
         Map<String, String> disconnect(@Param("driverBasePath") String driverBasePath, List<String> deviceIds);
+
+        @RequestLine("DELETE {driverBasePath}/reconnect-all")
+        Map<String, String> reconnectAll(@Param("driverBasePath") String driverBasePath);
 
         @RequestLine("GET {driverBasePath}/device-status/{id}")
         StatusCode getDeviceStatus(@Param("driverBasePath") String driverBasePath, @Param("id") String id);

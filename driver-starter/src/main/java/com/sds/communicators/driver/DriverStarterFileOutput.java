@@ -38,6 +38,7 @@ public class DriverStarterFileOutput extends DriverStarter {
                     statusFile,
                     driverId,
                     loadBalancing,
+                    reconnectWhenSplitBrainResolved,
                     defaultScript,
                     driverEvents,
                     driverBasePath,
@@ -51,6 +52,7 @@ public class DriverStarterFileOutput extends DriverStarter {
                                    String statusFile,
                                    String driverId,
                                    boolean loadBalancing,
+                                   boolean reconnectWhenSplitBrainResolved,
                                    String defaultScript,
                                    DriverEvents driverEvents,
                                    String driverBasePath,
@@ -59,6 +61,7 @@ public class DriverStarterFileOutput extends DriverStarter {
                                    ClusterStarter.Builder clusterStarterBuilder) throws Exception {
         super(driverId,
                 loadBalancing,
+                reconnectWhenSplitBrainResolved,
                 defaultScript,
                 driverEvents,
                 driverBasePath,
