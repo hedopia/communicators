@@ -331,7 +331,7 @@ abstract class DriverProtocol {
 
     public void setDisconnected() {
         log.trace("[{}] set disconnected", deviceId);
-        Schedulers.io().scheduleDirect(() -> driverService.disconnectList(Collections.singletonList(deviceId), false, true));
+        Schedulers.io().scheduleDirect(() -> driverService.disconnectList(Collections.singletonList(deviceId), true));
     }
 
     public void setData(Map<String, Object> data) {

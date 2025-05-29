@@ -23,14 +23,13 @@ import org.javatuples.Pair;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
 class DriverService {
     private final DriverStarter driverStarter;
     private final String driverBasePath;
-    private final ReentrantLock mutex = new ReentrantLock();
+    private final Object driverMutex = new Object();
     private final Object connectAllMutex = new Object();
     final DriverEvents driverEvents = DriverEvents.create();
     final Map<String, DriverProtocol> driverProtocols = new ConcurrentHashMap<>();
@@ -44,16 +43,13 @@ class DriverService {
     }
 
     void dispose() {
-        mutex.lock();
-        try {
+        synchronized (driverMutex) {
             while (!driverProtocols.isEmpty()) {
                 clusterStarter.parallelExecute(driverProtocols.keySet(), this::disconnect);
                 try {
                     Thread.sleep(3000);
                 } catch (InterruptedException ignored) {}
             }
-        } finally {
-            mutex.unlock();
         }
     }
 
@@ -99,14 +95,14 @@ class DriverService {
                 }
                 if (nodeIndex == clusterStarter.getNodeIndex()) {
                     if (!deviceSet.isEmpty())
-                        ret.putAll(connectAll(deviceSet, false));
+                        ret.putAll(connectAll(deviceSet));
                 } else {
                     var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
                                     ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToIndex(driverBasePath, deviceSet)),
                             "connect all to node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(deviceSet));
                     if (result != null) {
                         log.error("connect all to node-index: {} failed, connect to leader, devices: {}", nodeIndex, UtilFunc.joinDeviceId(deviceSet), result);
-                        ret.putAll(connectAll(deviceSet, false));
+                        ret.putAll(connectAll(deviceSet));
                     }
                 }
                 return ret;
@@ -132,41 +128,33 @@ class DriverService {
      *
      * @param devices device set
      */
-    Map<String, String> connectAll(Set<Device> devices, boolean tryLock) {
+    Map<String, String> connectAll(Set<Device> devices) {
         log.info("try to connect all: {}", UtilFunc.joinDeviceId(devices));
         if (devices.isEmpty())
             return new HashMap<>();
-        if (!tryLock || mutex.tryLock()) {
-            if (!tryLock) mutex.lock();
-            try {
-                var ret = new ConcurrentHashMap<String, String>();
-                var protocols = new ArrayList<DriverProtocol>();
-                var deviceSet = new HashSet<Device>();
-                for (Device device : devices) {
-                    try {
-                        protocols.add(DriverProtocol.build(this, new DriverCommand(driverStarter.defaultScript), device));
-                        deviceSet.add(device);
-                    } catch (Exception e) {
-                        log.error("[{}] connect failed", device.getId(), e);
-                        ret.put(device.getId(), "connect failed::" + e.getMessage());
-                    }
-                }
-
-                var deviceMap = deviceSet.stream().collect(Collectors.toMap(Device::getId, device -> device));
+        synchronized (driverMutex) {
+            var ret = new ConcurrentHashMap<String, String>();
+            var protocols = new ArrayList<DriverProtocol>();
+            var deviceSet = new HashSet<Device>();
+            for (Device device : devices) {
                 try {
-                    driverStarter.addDevices(deviceMap);
-                    clusterStarter.parallelExecute(protocols, protocol -> ret.put(protocol.deviceId, connect(protocol)));
-                    return ret;
-                } catch (JsonProcessingException e) {
-                    log.error("add devices failed, while parsing: {}", deviceMap, e);
-                    return deviceSet.stream().collect(Collectors.toMap(Device::getId, device -> "connect failed, while parsing"));
+                    protocols.add(DriverProtocol.build(this, new DriverCommand(driverStarter.defaultScript), device));
+                    deviceSet.add(device);
+                } catch (Exception e) {
+                    log.error("[{}] connect failed", device.getId(), e);
+                    ret.put(device.getId(), "connect failed::" + e.getMessage());
                 }
-            } finally {
-                mutex.unlock();
             }
-        } else {
-            log.info("add devices failed, device registering process is busy, device-ids: {}", UtilFunc.joinDeviceId(devices));
-            return devices.stream().collect(Collectors.toMap(Device::getId, device -> "connect failed, device registering process is busy"));
+
+            var deviceMap = deviceSet.stream().collect(Collectors.toMap(Device::getId, device -> device));
+            try {
+                driverStarter.addDevices(deviceMap);
+                clusterStarter.parallelExecute(protocols, protocol -> ret.put(protocol.deviceId, connect(protocol)));
+                return ret;
+            } catch (JsonProcessingException e) {
+                log.error("add devices failed, while parsing: {}", deviceMap, e);
+                return deviceSet.stream().collect(Collectors.toMap(Device::getId, device -> "connect failed, while parsing"));
+            }
         }
     }
 
@@ -218,55 +206,47 @@ class DriverService {
         }
     }
 
-    Map<String, String> disconnectList(Collection<String> deviceIds, boolean tryLock, boolean isSelfDevices) {
+    Map<String, String> disconnectList(Collection<String> deviceIds, boolean isSelfDevices) {
         log.info("[{}] try to disconnect list", String.join(",", deviceIds));
         if (deviceIds.isEmpty())
             return new HashMap<>();
-        if (!tryLock || mutex.tryLock()) {
-            if (!tryLock) mutex.lock();
-            try {
-                var deviceIdMap = driverStarter.getDeviceIdMap();
-                var disconnectList = new ArrayList<>();
-                for (var entry : deviceIdMap.entrySet()) {
-                    var list = deviceIds.stream().filter(deviceId -> entry.getValue().contains(deviceId)).collect(Collectors.toList());
-                    if (!list.isEmpty()) {
-                        if (entry.getKey() == clusterStarter.getNodeIndex()) {
-                            disconnectList.addAll(list);
-                        } else {
-                            if (!isSelfDevices)
-                                disconnectList.add(new Pair<>(entry.getKey(), list));
-                        }
+        synchronized (driverMutex) {
+            var deviceIdMap = driverStarter.getDeviceIdMap();
+            var disconnectList = new ArrayList<>();
+            for (var entry : deviceIdMap.entrySet()) {
+                var list = deviceIds.stream().filter(deviceId -> entry.getValue().contains(deviceId)).collect(Collectors.toList());
+                if (!list.isEmpty()) {
+                    if (entry.getKey() == clusterStarter.getNodeIndex()) {
+                        disconnectList.addAll(list);
+                    } else {
+                        if (!isSelfDevices)
+                            disconnectList.add(new Pair<>(entry.getKey(), list));
                     }
                 }
-
-                var ret = new ConcurrentHashMap<String, String>();
-                clusterStarter.parallelExecute(disconnectList, obj -> {
-                    if (obj instanceof String) {
-                        ret.put((String) obj, disconnect((String) obj));
-                    } else {
-                        var nodeIndex = ((Pair<Integer, List<String>>) obj).getValue0();
-                        var deviceIdList = ((Pair<Integer, List<String>>) obj).getValue1();
-                        var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                                        ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).disconnect(driverBasePath, deviceIdList)),
-                                "disconnect to node-index: " + nodeIndex + ", devices: " + String.join(", ", deviceIdList));
-                        if (result != null)
-                            ret.putAll(deviceIdList.stream().collect(Collectors.toMap(id -> id, id -> errorParser(result))));
-                    }
-                });
-                driverStarter.deleteDevices(ret);
-                return ret;
-            } finally {
-                mutex.unlock();
             }
-        } else {
-            log.info("[{}] disconnect failed, device registering process is busy", String.join(",", deviceIds));
-            return null;
+
+            var ret = new ConcurrentHashMap<String, String>();
+            clusterStarter.parallelExecute(disconnectList, obj -> {
+                if (obj instanceof String) {
+                    ret.put((String) obj, disconnect((String) obj));
+                } else {
+                    var nodeIndex = ((Pair<Integer, List<String>>) obj).getValue0();
+                    var deviceIdList = ((Pair<Integer, List<String>>) obj).getValue1();
+                    var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
+                                    ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).disconnect(driverBasePath, deviceIdList)),
+                            "disconnect to node-index: " + nodeIndex + ", devices: " + String.join(", ", deviceIdList));
+                    if (result != null)
+                        ret.putAll(deviceIdList.stream().collect(Collectors.toMap(id -> id, id -> errorParser(result))));
+                }
+            });
+            driverStarter.deleteDevices(ret);
+            return ret;
         }
     }
 
-    Map<String, String> disconnectAll(boolean tryLock) {
+    Map<String, String> disconnectAll() {
         log.info("try to disconnect all");
-        return disconnectList(driverProtocols.keySet(), tryLock, true);
+        return disconnectList(driverProtocols.keySet(), true);
     }
 
     Object executeCommandIdsOnThread(String deviceId, List<String> commandIdList, String initialValue, boolean isResponseOutput) {
@@ -394,7 +374,7 @@ class DriverService {
         return new ClusterEvents()
                 .inactivated("disconnect-all", () -> {
                     log.info("node inactivated, disconnect all");
-                    disconnectAll(false);
+                    disconnectAll();
                 })
                 .clusterDeleted("connect-all for deleted node", (nodeIndex, object) -> {
                     if (object != null) {
@@ -415,7 +395,7 @@ class DriverService {
                             var reconnectList = driverProtocols.entrySet().stream()
                                     .filter(kv -> intersection.contains(kv.getKey()))
                                     .collect(Collectors.toMap(Map.Entry::getKey, kv -> kv.getValue().device));
-                            disconnectList(reconnectList.keySet(), false, true);
+                            disconnectList(reconnectList.keySet(), true);
                             balancedConnectAll(new HashSet<>(reconnectList.values()));
                         }
                     }

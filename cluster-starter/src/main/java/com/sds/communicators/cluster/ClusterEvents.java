@@ -18,6 +18,7 @@ public class ClusterEvents {
     final List<Pair<String, Consumer<Integer>>> clusterAddedEvents = new ArrayList<>();
     final List<Pair<String, BiConsumer<Integer, Map<String, Object>>>> clusterDeletedEvents = new ArrayList<>();
     final List<Pair<String, Consumer<Integer>>> overwrittenEvents = new ArrayList<>();
+    final List<Pair<String, Action>> splitBrainResolvedEvents = new ArrayList<>();
 
     public ClusterEvents addAll(ClusterEvents clusterEvents) {
         if (clusterEvents != null) {
@@ -28,6 +29,7 @@ public class ClusterEvents {
             clusterAddedEvents.addAll(clusterEvents.clusterAddedEvents);
             clusterDeletedEvents.addAll(clusterEvents.clusterDeletedEvents);
             overwrittenEvents.addAll(clusterEvents.overwrittenEvents);
+            splitBrainResolvedEvents.addAll(clusterEvents.splitBrainResolvedEvents);
         }
         return this;
     }
@@ -64,6 +66,11 @@ public class ClusterEvents {
 
     public ClusterEvents overwritten(String id, Consumer<Integer> action) {
         overwrittenEvents.add(new Pair<>(id, action));
+        return this;
+    }
+
+    public ClusterEvents splitBrainResolved(String id, Action action) {
+        splitBrainResolvedEvents.add(new Pair<>(id, action));
         return this;
     }
 }

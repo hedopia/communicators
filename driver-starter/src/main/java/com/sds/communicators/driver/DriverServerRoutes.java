@@ -36,7 +36,7 @@ class DriverServerRoutes {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             return request.bodyToMono(new ParameterizedTypeReference<Set<Device>>() {})
                                     .flatMap(devices -> ServerResponse.ok()
-                                            .bodyValue(driverService.connectAll(devices, true)));
+                                            .bodyValue(driverService.connectAll(devices)));
                         })
                         .POST("/connect-all-to-leader/{nodeIndex}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
@@ -46,20 +46,13 @@ class DriverServerRoutes {
                         })
                         .DELETE("/disconnect-all", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
-                            var ret = driverService.disconnectAll(true);
-                            return ret == null ?
-                                    ServerResponse.badRequest().bodyValue("device registering process is busy")
-                                    : ServerResponse.ok().bodyValue(ret);
+                            return ServerResponse.ok().bodyValue(driverService.disconnectAll());
                         })
                         .DELETE("/disconnect", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             return request.bodyToMono(new ParameterizedTypeReference<List<String>>() {})
-                                    .flatMap(deviceIds -> {
-                                        var ret = driverService.disconnectList(deviceIds, true, false);
-                                        return ret == null ?
-                                                ServerResponse.badRequest().bodyValue("device registering process is busy")
-                                                : ServerResponse.ok().bodyValue(ret);
-                                    });
+                                    .flatMap(deviceIds ->
+                                            ServerResponse.ok().bodyValue(driverService.disconnectList(deviceIds, false)));
                         })
                         .GET("/device-status/{deviceId}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));

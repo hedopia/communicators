@@ -392,8 +392,9 @@ class ClusterService {
     void syncSharedObject(SharedObject object) {
         log.debug("synchronize split brain nodes start");
         for (var nodeIndex : object.sharedObject.keySet()) {
-            sharedObject.putIfAbsent(nodeIndex, object.sharedObject.get(nodeIndex));
-            sharedObjectSeq.putIfAbsent(nodeIndex, object.sharedObjectSeq.get(nodeIndex));
+            if (!sharedObject.containsKey(nodeIndex))
+                overwriteSharedObject(nodeIndex,
+                        new MergeSharedObjectInfo(object.sharedObjectSeq.get(nodeIndex), object.sharedObject.get(nodeIndex)));
         }
         var results = new ConcurrentHashMap<String, Set<Integer>>();
         redirectFunction.toAllFunc(targetUrl ->
@@ -405,6 +406,15 @@ class ClusterService {
         redirectFunction.parallelExecute(syncList, sync ->
                 client.getClient(sync.getValue0()).overwriteSharedObject(clusterBasePath, sync.getValue1(),
                         new MergeSharedObjectInfo(sharedObjectSeq.get(sync.getValue1()), sharedObject.get(sync.getValue1()))));
+        Schedulers.io().scheduleDirect(() -> {
+            for (var action : clusterEvents.splitBrainResolvedEvents) {
+                try {
+                    action.getValue1().run();
+                } catch (Throwable e) {
+                    log.error("split brain resolved events [{}] failed", action.getValue0(), e);
+                }
+            }
+        });
         log.trace("synchronize split brain nodes end");
     }
 
