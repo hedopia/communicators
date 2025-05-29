@@ -78,6 +78,9 @@ class ClusterService {
         disposables.clear();
         sharedObject.clear();
         sharedObjectSeq.clear();
+        for (var node : nodes.values())
+            node.dispose();
+        nodes.clear();
     }
 
     void forceToLeader() {
