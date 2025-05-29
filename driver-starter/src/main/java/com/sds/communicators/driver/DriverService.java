@@ -332,7 +332,7 @@ class DriverService {
                 return Integer.compare(size, o.size);
             }
         }
-        if (driverStarter.isLoadBalancing()) {
+        if (driverStarter.loadBalancing) {
             var dividedList = new HashMap<Integer, Set<Device>>();
             for (var nodeIndex : clusterStarter.getCluster())
                 dividedList.put(nodeIndex, new HashSet<>());

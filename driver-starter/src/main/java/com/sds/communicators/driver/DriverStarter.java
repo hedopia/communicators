@@ -35,7 +35,7 @@ public abstract class DriverStarter {
     /**
      * load balancing mode
      */
-    private final boolean loadBalancing;
+    final boolean loadBalancing;
     final boolean reconnectWhenSplitBrainResolved;
     final String defaultScript;
     final ObjectMapper objectMapper = new ObjectMapper();
@@ -240,10 +240,6 @@ public abstract class DriverStarter {
 
     public String getDriverId() {
         return driverId;
-    }
-
-    public boolean isLoadBalancing() {
-        return loadBalancing;
     }
 
     public Set<Device> getRegisteredDevices() {
