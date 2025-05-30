@@ -148,30 +148,9 @@ class ClusterService {
                     disposables.clear();
                     if (position == Position.LEADER) {
                         sendHeartbeat(Position.LEADER);
-                        disposables.add(
-                                Schedulers.io().scheduleDirect(() -> {
-                                    for (var action : clusterEvents.becomeLeaderEvents) {
-                                        try {
-                                            action.getValue1().run();
-                                        } catch (Throwable e) {
-                                            log.error("become leader events [{}] failed", action.getValue0(), e);
-                                        }
-                                    }
-                                })
-                        );
+                        ClusterEvents.fireEvents(clusterEvents.becomeLeaderEvents, "become leader");
                     } else {
-                        disposables.add(
-                                Schedulers.io().scheduleDirect(() -> {
-                                    for (var action : clusterEvents.becomeFollowerEvents) {
-                                        try {
-                                            action.getValue1().run();
-                                        } catch (Throwable e) {
-                                            log.error("become follower events [{}] failed", action.getValue0(), e);
-                                        }
-                                    }
-                                })
-                        );
-
+                        ClusterEvents.fireEvents(clusterEvents.becomeFollowerEvents, "become follower");
                         disposables.add(
                                 leaderTimer.filter(p -> p == Position.LEADER)
                                         .timeout(clusterStarter.leaderLostTimeoutSeconds, TimeUnit.SECONDS, Schedulers.io())
@@ -273,15 +252,7 @@ class ClusterService {
     private void clusterAdded(int nodeIndex) {
         log.info("cluster node added, nodeIndex: {}", nodeIndex);
         nodes.computeIfAbsent(nodeIndex, key -> {
-            Schedulers.io().scheduleDirect(() -> {
-                for (var action : clusterEvents.clusterAddedEvents) {
-                    try {
-                        action.getValue1().accept(key);
-                    } catch (Throwable e) {
-                        log.error("cluster(node-index: {}) added events [{}] failed", key, action.getValue0(), e);
-                    }
-                }
-            });
+            ClusterEvents.fireEvents(clusterEvents.clusterAddedEvents, key, "cluster(node-index: " + key + ") added");
             verifyActivation();
             return nodeTimer.filter(r -> r.equals(key))
                     .timeout(clusterStarter.leaderLostTimeoutSeconds, TimeUnit.SECONDS, Schedulers.io())
@@ -311,15 +282,7 @@ class ClusterService {
             log.debug("node-index: {}, removed shared-object process", nodeIndex);
             sharedObjectSeq.remove(nodeIndex);
             redirectFunction.toAllFunc(targetUrl -> client.getClient(targetUrl).clusterDeleted(clusterBasePath, nodeIndex), "cluster deleted");
-            Schedulers.io().scheduleDirect(() -> {
-                for (var action : clusterEvents.clusterDeletedEvents) {
-                    try {
-                        action.getValue1().accept(nodeIndex, removed);
-                    } catch (Throwable e) {
-                        log.error("cluster(node-index: {}) deleted events [{}] failed, object: {}", nodeIndex, action.getValue0(), removed, e);
-                    }
-                }
-            });
+            ClusterEvents.fireEvents(clusterEvents.clusterDeletedEvents, nodeIndex, removed, "cluster(node-index: " + nodeIndex + ") deleted, object: (" + removed + ")");
         }
     }
 
@@ -334,28 +297,12 @@ class ClusterService {
         if (nodes.size() < quorum && clusterStarter.isActivated) {
             log.info("application inactivated");
             clusterStarter.isActivated = false;
-            Schedulers.io().scheduleDirect(() -> {
-                for (var action : clusterEvents.inactivatedEvents) {
-                    try {
-                        action.getValue1().run();
-                    } catch (Throwable e) {
-                        log.error("inactivated events [{}] failed", action.getValue0(), e);
-                    }
-                }
-            });
+            ClusterEvents.fireEvents(clusterEvents.inactivatedEvents, "inactivated");
         }
         else if (nodes.size() >= quorum && !clusterStarter.isActivated) {
             log.info("application activated");
             clusterStarter.isActivated = true;
-            Schedulers.io().scheduleDirect(() -> {
-                for (var action : clusterEvents.activatedEvents) {
-                    try {
-                        action.getValue1().run();
-                    } catch (Throwable e) {
-                        log.error("activated events [{}] failed", action.getValue0(), e);
-                    }
-                }
-            });
+            ClusterEvents.fireEvents(clusterEvents.activatedEvents, "activated");
         }
     }
 
@@ -417,15 +364,7 @@ class ClusterService {
         redirectFunction.parallelExecute(syncList, sync ->
                 client.getClient(sync.getValue0()).overwriteSharedObject(clusterBasePath, sync.getValue1(),
                         new MergeSharedObjectInfo(sharedObjectSeq.get(sync.getValue1()), sharedObject.get(sync.getValue1()))));
-        Schedulers.io().scheduleDirect(() -> {
-            for (var action : clusterEvents.splitBrainResolvedEvents) {
-                try {
-                    action.getValue1().run();
-                } catch (Throwable e) {
-                    log.error("split brain resolved events [{}] failed", action.getValue0(), e);
-                }
-            }
-        });
+        ClusterEvents.fireEvents(clusterEvents.splitBrainResolvedEvents, "split brain resolved");
         log.trace("synchronize split brain nodes end");
     }
 
@@ -433,15 +372,7 @@ class ClusterService {
         log.info("overwrite shared-object, sender-node-index: {}, shared-object-info: {}", nodeIndex, sharedObjectInfo);
         sharedObject.put(nodeIndex, sharedObjectInfo.obj);
         sharedObjectSeq.put(nodeIndex, sharedObjectInfo.seq);
-        Schedulers.io().scheduleDirect(() -> {
-            for (var action : clusterEvents.overwrittenEvents) {
-                try {
-                    action.getValue1().accept(nodeIndex);
-                } catch (Throwable e) {
-                    log.error("overwritten events [{}] for node-index: {} failed", action.getValue0(), nodeIndex, e);
-                }
-            }
-        });
+        ClusterEvents.fireEvents(clusterEvents.overwrittenEvents, nodeIndex, "overwritten (node-index: " + nodeIndex + ")");
     }
 
     boolean checkSharedObject(int senderNodeIndex, SharedObjectInfo sharedObjectInfo) {

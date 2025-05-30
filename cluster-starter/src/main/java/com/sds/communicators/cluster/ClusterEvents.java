@@ -3,12 +3,15 @@ package com.sds.communicators.cluster;
 import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.functions.BiConsumer;
 import io.reactivex.rxjava3.functions.Consumer;
+import io.reactivex.rxjava3.schedulers.Schedulers;
+import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 public class ClusterEvents {
 
     final List<Pair<String, Action>> activatedEvents = new ArrayList<>();
@@ -72,5 +75,41 @@ public class ClusterEvents {
     public ClusterEvents splitBrainResolved(String id, Action action) {
         splitBrainResolvedEvents.add(new Pair<>(id, action));
         return this;
+    }
+
+    static void fireEvents(List<Pair<String, Action>> events, String eventName) {
+        for (var action : events) {
+            Schedulers.io().scheduleDirect(() -> {
+                try {
+                    action.getValue1().run();
+                } catch (Throwable e) {
+                    log.error("{} event [{}] failed", eventName, action.getValue0(), e);
+                }
+            });
+        }
+    }
+
+    static <T> void fireEvents(List<Pair<String, Consumer<T>>> events, T t, String eventName) {
+        for (var action : events) {
+            Schedulers.io().scheduleDirect(() -> {
+                try {
+                    action.getValue1().accept(t);
+                } catch (Throwable e) {
+                    log.error("{} event [{}] failed", eventName, action.getValue0(), e);
+                }
+            });
+        }
+    }
+
+    static <T, U> void fireEvents(List<Pair<String, BiConsumer<T, U>>> events, T t, U u, String eventName) {
+        for (var action : events) {
+            Schedulers.io().scheduleDirect(() -> {
+                try {
+                    action.getValue1().accept(t, u);
+                } catch (Throwable e) {
+                    log.error("{} event [{}] failed", eventName, action.getValue0(), e);
+                }
+            });
+        }
     }
 }

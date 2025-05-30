@@ -16,7 +16,6 @@ import feign.FeignException;
 import feign.Param;
 import feign.QueryMap;
 import feign.RequestLine;
-import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
@@ -168,15 +167,7 @@ class DriverService {
         log.trace("[{}] try to connect...", protocol.deviceId);
         driverProtocols.put(protocol.deviceId, protocol);
         var ret = protocol.changeStatus(StatusCode.CONNECTING);
-        Schedulers.io().scheduleDirect(() -> {
-            for (var action : driverEvents.deviceAddedEvents) {
-                try {
-                    action.getValue1().accept(protocol.device);
-                } catch (Throwable e) {
-                    log.error("device added events [{}] failed, device: {}", action.getValue0(), protocol.device, e);
-                }
-            }
-        });
+        DriverEvents.fireEvents(driverEvents.deviceAddedEvents, protocol.device, "device(" + protocol.device + ") added");
         return Objects.requireNonNullElse(ret, "connected");
     }
 
@@ -194,15 +185,7 @@ class DriverService {
         var protocol = driverProtocols.get(deviceId);
         var ret = protocol.changeStatus(StatusCode.DISCONNECTED);
         if (ret == null) {
-            Schedulers.io().scheduleDirect(() -> {
-                for (var action : driverEvents.deviceDeletedEvents) {
-                    try {
-                        action.getValue1().accept(protocol.device);
-                    } catch (Throwable e) {
-                        log.error("device deleted events [{}] failed, device: {}", action.getValue0(), protocol.device, e);
-                    }
-                }
-            });
+            DriverEvents.fireEvents(driverEvents.deviceDeletedEvents, protocol.device, "device(" + protocol.device + ") deleted");
             responseMap.remove(deviceId);
             driverProtocols.remove(deviceId);
             return "disconnected";
