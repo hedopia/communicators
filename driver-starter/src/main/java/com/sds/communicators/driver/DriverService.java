@@ -16,6 +16,7 @@ import feign.FeignException;
 import feign.Param;
 import feign.QueryMap;
 import feign.RequestLine;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
@@ -167,13 +168,15 @@ class DriverService {
         log.trace("[{}] try to connect...", protocol.deviceId);
         driverProtocols.put(protocol.deviceId, protocol);
         var ret = protocol.changeStatus(StatusCode.CONNECTING);
-        for (var action : driverEvents.deviceAddedEvents) {
-            try {
-                action.getValue1().accept(protocol.device);
-            } catch (Throwable e) {
-                log.error("device added events [{}] failed, device: {}", action.getValue0(), protocol.device, e);
+        Schedulers.io().scheduleDirect(() -> {
+            for (var action : driverEvents.deviceAddedEvents) {
+                try {
+                    action.getValue1().accept(protocol.device);
+                } catch (Throwable e) {
+                    log.error("device added events [{}] failed, device: {}", action.getValue0(), protocol.device, e);
+                }
             }
-        }
+        });
         return Objects.requireNonNullElse(ret, "connected");
     }
 
@@ -191,13 +194,15 @@ class DriverService {
         var protocol = driverProtocols.get(deviceId);
         var ret = protocol.changeStatus(StatusCode.DISCONNECTED);
         if (ret == null) {
-            for (var action : driverEvents.deviceDeletedEvents) {
-                try {
-                    action.getValue1().accept(protocol.device);
-                } catch (Throwable e) {
-                    log.error("device deleted events [{}] failed, device: {}", action.getValue0(), protocol.device, e);
+            Schedulers.io().scheduleDirect(() -> {
+                for (var action : driverEvents.deviceDeletedEvents) {
+                    try {
+                        action.getValue1().accept(protocol.device);
+                    } catch (Throwable e) {
+                        log.error("device deleted events [{}] failed, device: {}", action.getValue0(), protocol.device, e);
+                    }
                 }
-            }
+            });
             responseMap.remove(deviceId);
             driverProtocols.remove(deviceId);
             return "disconnected";
@@ -417,14 +422,6 @@ class DriverService {
                             balancedConnectAll(new HashSet<>(reconnectList.values()));
                         }
                     }
-                })
-                .splitBrainResolved("reconnect all of devices", () -> {
-                    if (driverStarter.reconnectWhenSplitBrainResolved) {
-                        log.warn("reconnect all of devices in cluster nodes after split brain resolved");
-                        clusterStarter.toAllFunc(targetUrl ->
-                                        clusterStarter.getClient(targetUrl, DriverClientApi.class).reconnectAll(driverBasePath),
-                                "reconnect all");
-                    }
                 });
     }
 
@@ -540,9 +537,6 @@ class DriverService {
 
         @RequestLine("DELETE {driverBasePath}/disconnect")
         Map<String, String> disconnect(@Param("driverBasePath") String driverBasePath, List<String> deviceIds);
-
-        @RequestLine("PUT {driverBasePath}/reconnect-all")
-        void reconnectAll(@Param("driverBasePath") String driverBasePath);
 
         @RequestLine("GET {driverBasePath}/device-status/{id}")
         StatusCode getDeviceStatus(@Param("driverBasePath") String driverBasePath, @Param("id") String id);

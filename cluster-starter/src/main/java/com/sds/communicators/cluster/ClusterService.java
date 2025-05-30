@@ -273,13 +273,15 @@ class ClusterService {
     private void clusterAdded(int nodeIndex) {
         log.info("cluster node added, nodeIndex: {}", nodeIndex);
         nodes.computeIfAbsent(nodeIndex, key -> {
-            for (var action : clusterEvents.clusterAddedEvents) {
-                try {
-                    action.getValue1().accept(key);
-                } catch (Throwable e) {
-                    log.error("cluster(node-index: {}) added events [{}] failed", key, action.getValue0(), e);
+            Schedulers.io().scheduleDirect(() -> {
+                for (var action : clusterEvents.clusterAddedEvents) {
+                    try {
+                        action.getValue1().accept(key);
+                    } catch (Throwable e) {
+                        log.error("cluster(node-index: {}) added events [{}] failed", key, action.getValue0(), e);
+                    }
                 }
-            }
+            });
             verifyActivation();
             return nodeTimer.filter(r -> r.equals(key))
                     .timeout(clusterStarter.leaderLostTimeoutSeconds, TimeUnit.SECONDS, Schedulers.io())
@@ -309,13 +311,15 @@ class ClusterService {
             log.debug("node-index: {}, removed shared-object process", nodeIndex);
             sharedObjectSeq.remove(nodeIndex);
             redirectFunction.toAllFunc(targetUrl -> client.getClient(targetUrl).clusterDeleted(clusterBasePath, nodeIndex), "cluster deleted");
-            for (var action : clusterEvents.clusterDeletedEvents) {
-                try {
-                    action.getValue1().accept(nodeIndex, removed);
-                } catch (Throwable e) {
-                    log.error("cluster(node-index: {}) deleted events [{}] failed, object: {}", nodeIndex, action.getValue0(), removed, e);
+            Schedulers.io().scheduleDirect(() -> {
+                for (var action : clusterEvents.clusterDeletedEvents) {
+                    try {
+                        action.getValue1().accept(nodeIndex, removed);
+                    } catch (Throwable e) {
+                        log.error("cluster(node-index: {}) deleted events [{}] failed, object: {}", nodeIndex, action.getValue0(), removed, e);
+                    }
                 }
-            }
+            });
         }
     }
 
@@ -330,24 +334,28 @@ class ClusterService {
         if (nodes.size() < quorum && clusterStarter.isActivated) {
             log.info("application inactivated");
             clusterStarter.isActivated = false;
-            for (var action : clusterEvents.inactivatedEvents) {
-                try {
-                    action.getValue1().run();
-                } catch (Throwable e) {
-                    log.error("inactivated events [{}] failed", action.getValue0(), e);
+            Schedulers.io().scheduleDirect(() -> {
+                for (var action : clusterEvents.inactivatedEvents) {
+                    try {
+                        action.getValue1().run();
+                    } catch (Throwable e) {
+                        log.error("inactivated events [{}] failed", action.getValue0(), e);
+                    }
                 }
-            }
+            });
         }
         else if (nodes.size() >= quorum && !clusterStarter.isActivated) {
             log.info("application activated");
             clusterStarter.isActivated = true;
-            for (var action : clusterEvents.activatedEvents) {
-                try {
-                    action.getValue1().run();
-                } catch (Throwable e) {
-                    log.error("activated events [{}] failed", action.getValue0(), e);
+            Schedulers.io().scheduleDirect(() -> {
+                for (var action : clusterEvents.activatedEvents) {
+                    try {
+                        action.getValue1().run();
+                    } catch (Throwable e) {
+                        log.error("activated events [{}] failed", action.getValue0(), e);
+                    }
                 }
-            }
+            });
         }
     }
 
