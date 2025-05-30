@@ -378,8 +378,8 @@ class ClusterService {
                     else
                         for (List<String> path : ((DeleteSharedObjectInfo) sharedObjectInfo).paths)
                             deleteObject(senderNodeIndex, path);
+                    sharedObjectSeq.put(senderNodeIndex, sharedObjectSeq.get(senderNodeIndex) + 1);
                 }
-                sharedObjectSeq.put(senderNodeIndex, sharedObjectSeq.get(senderNodeIndex) + 1);
             }
 
             log.trace("propagate shared-object for node-index: {}", senderNodeIndex);
