@@ -21,11 +21,15 @@ public class DriverStarterFileOutput extends DriverStarter {
     private final String responseFile;
     private final String statusFile;
 
+    public static Builder Builder(String responseFile, String statusFile, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+        return new Builder(responseFile, statusFile, driverId, clusterStarterBuilder);
+    }
+
     public static class Builder extends DriverStarter.Builder {
         private final String responseFile;
         private final String statusFile;
 
-        public Builder(String responseFile, String statusFile, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+        private Builder(String responseFile, String statusFile, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
             super(driverId, clusterStarterBuilder);
             this.responseFile = responseFile;
             this.statusFile = statusFile;

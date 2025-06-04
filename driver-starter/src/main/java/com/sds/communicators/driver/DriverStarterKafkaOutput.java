@@ -24,6 +24,10 @@ public class DriverStarterKafkaOutput extends DriverStarter {
     private final String statusFormat;
     private final Producer<String, String> producer;
 
+    public static Builder Builder(String bootstrapAddress, String responseTopic, String responseFormat, String statusTopic, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+        return new Builder(bootstrapAddress, responseTopic, responseFormat, statusTopic, statusFormat, driverId, clusterStarterBuilder);
+    }
+
     public static class Builder extends DriverStarter.Builder {
         private final String bootstrapAddress;
         private final String responseTopic;
@@ -31,7 +35,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
         private final String statusTopic;
         private final String statusFormat;
 
-        public Builder(String bootstrapAddress, String responseTopic, String responseFormat, String statusTopic, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+        private Builder(String bootstrapAddress, String responseTopic, String responseFormat, String statusTopic, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
             super(driverId, clusterStarterBuilder);
             this.bootstrapAddress = bootstrapAddress;
             this.responseTopic = responseTopic;

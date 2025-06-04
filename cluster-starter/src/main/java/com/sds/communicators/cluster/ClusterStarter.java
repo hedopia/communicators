@@ -35,6 +35,10 @@ public class ClusterStarter {
 
     private boolean isStarted = false;
 
+    public static Builder Builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
+        return new Builder(nodeTargetUrls, serverPort, nodeIndex);
+    }
+
     public static class Builder {
         private final Set<String> nodeTargetUrls;
         private final int serverPort;
@@ -48,7 +52,7 @@ public class ClusterStarter {
         private int connectTimeoutMillis;
         private int readTimeoutMillis;
 
-        public Builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
+        private Builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
             this.nodeTargetUrls = nodeTargetUrls;
             this.serverPort = serverPort;
             this.nodeIndex = nodeIndex;

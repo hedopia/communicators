@@ -21,6 +21,10 @@ public class DriverStarterRestOutput extends DriverStarter {
     private final String statusPath;
     private final String statusFormat;
 
+    public static Builder Builder(Set<String> restOutputTargetUrls, String responsePath, String responseFormat, String statusPath, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+        return new Builder(restOutputTargetUrls, responsePath, responseFormat, statusPath, statusFormat, driverId, clusterStarterBuilder);
+    }
+
     public static class Builder extends DriverStarter.Builder {
         private final Set<String> restOutputTargetUrls;
         private final String responsePath;
@@ -28,7 +32,7 @@ public class DriverStarterRestOutput extends DriverStarter {
         private final String statusPath;
         private final String statusFormat;
 
-        public Builder(Set<String> restOutputTargetUrls, String responsePath, String responseFormat, String statusPath, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+        private Builder(Set<String> restOutputTargetUrls, String responsePath, String responseFormat, String statusPath, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
             super(driverId, clusterStarterBuilder);
             this.restOutputTargetUrls = restOutputTargetUrls;
             this.responsePath = responsePath;
