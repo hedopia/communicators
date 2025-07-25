@@ -11,6 +11,7 @@ public class DriverProtocolSecsGemServer extends DriverProtocolSecsGem {
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
+        connectionLostOnException = false;
         super.initialize(connectionInfo, option);
         try {
             var protocolScript = device.getProtocolScript();
@@ -36,6 +37,7 @@ public class DriverProtocolSecsGemServer extends DriverProtocolSecsGem {
             driverCommand.pythonInterpreter.exec("host_device_" + deviceId + " = SecsGemServer_" + deviceId + "('" + host + "', " + port + ", '" + deviceId + "')");
         else
             driverCommand.pythonInterpreter.exec("host_device_" + deviceId + " = SecsGemServer_" + deviceId + "('0.0.0.0', " + port + ", '" + deviceId + "')");
+        device.setConnectionCommand(false);
     }
 
     @Override

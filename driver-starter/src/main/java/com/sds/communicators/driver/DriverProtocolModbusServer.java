@@ -245,6 +245,7 @@ public class DriverProtocolModbusServer extends DriverProtocol {
                 }
             }
         });
+        device.setConnectionCommand(false);
     }
 
     private void executeNonPeriodicCommands(PyObject[] input) throws Exception {

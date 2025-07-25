@@ -27,6 +27,7 @@ public class DriverProtocolTcpServer extends DriverProtocolTcpUdp {
         connectionLostOnException = false;
         super.initialize(connectionInfo, option);
         TcpInitialize(option);
+        device.setConnectionCommand(false);
     }
 
     @Override

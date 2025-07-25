@@ -40,6 +40,7 @@ public class DriverProtocolUdpServer extends DriverProtocolTcpUdp {
             else
                 throw new Exception("invalid multicast addresses " + multicastGroup);
         }
+        device.setConnectionCommand(false);
     }
 
     @Override
