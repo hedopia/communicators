@@ -38,19 +38,19 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
 
     @Override
     List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) throws Exception {
-        var t = HttpClient.create()
-                .headers(headers -> request.headers().asHttpHeaders().forEach(headers::add))
-                .request(HttpMethod.valueOf(method.name()))
-                .uri(UriComponentsBuilder.fromHttpUrl(path).queryParams(request.queryParams()).toUriString())
-                .send(ByteBufFlux.fromInbound(request.bodyToMono(byte[].class)))
-                .responseSingle((response, byteBufMono) ->
-                        byteBufMono.asByteArray().map(body ->
-                                ServerResponse.status(response.status().code())
-                                        .headers(httpHeaders -> response.responseHeaders())
-                                        .body(BodyInserters.fromValue(body))
-                        ))
-                .flatMap(response -> response);
-        t.block();
+//        var t = HttpClient.create()
+//                .headers(headers -> request.headers().asHttpHeaders().forEach(headers::add))
+//                .request(HttpMethod.valueOf(method.name()))
+//                .uri(UriComponentsBuilder.fromHttpUrl(path).queryParams(request.queryParams()).toUriString())
+//                .send(ByteBufFlux.fromInbound(request.bodyToMono(byte[].class)))
+//                .responseSingle((response, byteBufMono) ->
+//                        byteBufMono.asByteArray().map(body ->
+//                                ServerResponse.status(response.status().code())
+//                                        .headers(httpHeaders -> response.responseHeaders())
+//                                        .body(BodyInserters.fromValue(body))
+//                        ))
+//                .flatMap(response -> response);
+//        t.block();
         return List.of();
     }
 

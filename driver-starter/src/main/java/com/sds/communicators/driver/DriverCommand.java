@@ -428,7 +428,7 @@ class DriverCommand {
                         throw new ScriptException(String.format("output parsing failed (wrong tuple size), tag-value=%s, size=%d", tuple, tuple.size()));
                     }
                 } else {
-                    throw new ScriptException(String.format("output parsing failed (type is not PyTuple), tag-value=%s, type=%s", o.toString(), o.getClass().toString()));
+                    throw new ScriptException(String.format("output parsing failed (type is not PyTuple), tag-value=%s, type=%s", o.toString(), o.getClass()));
                 }
             }
         } else if (output instanceof PyNone) {
