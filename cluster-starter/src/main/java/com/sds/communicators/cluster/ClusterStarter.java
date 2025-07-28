@@ -164,7 +164,7 @@ public class ClusterStarter {
             this.nodeUrl = nodeUrls.stream().findFirst().get();
         } finally {
             server.disposeNow();
-            for (Channel channel : channels)
+            for (var channel : channels)
                 channel.close().get();
         }
 

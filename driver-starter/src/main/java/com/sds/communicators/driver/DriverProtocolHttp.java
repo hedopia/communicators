@@ -19,6 +19,7 @@ import java.util.Map;
 @Slf4j
 abstract class DriverProtocolHttp extends DriverProtocol {
     protected SslContext sslContext;
+    protected PyFunction jsonLoads;
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
         // cert, key, trustCert -> need base64 encoded
@@ -65,11 +66,15 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         } else {
             sslContext = null;
         }
+
+        driverCommand.pythonInterpreter.exec("from json import loads as json_loads");
+        jsonLoads = (PyFunction)driverCommand.pythonInterpreter.get("json_loads");
+        if (jsonLoads == null) throw new Exception("json loads function is not loaded");
     }
 
-    abstract SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword);
-    abstract SslContextBuilder getSslContextBuilder(KeyManagerFactory keyManagerFactory);
-    abstract SslContextBuilder getTrustSslContextBuilder(SslContextBuilder sslContextBuilder);
+    protected abstract SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword);
+    protected abstract SslContextBuilder getSslContextBuilder(KeyManagerFactory keyManagerFactory);
+    protected abstract SslContextBuilder getTrustSslContextBuilder(SslContextBuilder sslContextBuilder);
 
 
 }

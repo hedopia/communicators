@@ -130,6 +130,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 var map = (Map<?, ?>) obj;
                 var req = new RequestInfo(map.get("message"), map.get("host"), map.get("port"));
                 log.trace("sendString as RequestInfo: {}", requestInfo);
+                // map.get("message") 만 null아닐때 모두에게 send
                 sendString(req);
             } else {
                 log.trace("sendString as String: {}", obj.toString());
