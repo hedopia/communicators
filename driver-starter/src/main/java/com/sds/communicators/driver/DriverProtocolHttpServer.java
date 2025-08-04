@@ -15,14 +15,13 @@ import org.javatuples.Triplet;
 import org.python.core.*;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
+import reactor.netty.NettyOutbound;
 import reactor.netty.http.server.HttpServer;
 
 import javax.net.ssl.KeyManagerFactory;
 import java.io.InputStream;
 import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -68,8 +67,8 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                 .handle((request, response) ->
                         request.receive()
                                 .aggregate()
-                                .asString()
-                                .defaultIfEmpty("")
+                                .asByteArray()
+                                .defaultIfEmpty(new byte[]{})
                                 .flatMap(body -> {
                                     var decoder = new QueryStringDecoder(request.uri());
                                     var params = decoder.parameters().entrySet().stream()
@@ -95,7 +94,9 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
 
     @Override
     List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
-        log.info("[{}] cmdId={}, requestCommand not supported for http server", deviceId, cmdId);
+        if (!(nonPeriodicObject instanceof List)) throw new DriverCommand.ScriptException("http-server only supports non-periodic commands");
+        else if (isReadCommand) throw new DriverCommand.ScriptException("not supported command for http-server");
+        ((List<String>) nonPeriodicObject).add(requestInfo);
         return null;
     }
 
@@ -104,6 +105,31 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
             executeProtocolFunc(received, receivedTime);
         } else {
             driverCommand.executeNonPeriodicCommands(received, receivedTime);
+        }
+    }
+    private void executeProtocolFunc(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
+        var arg = new PyObject[((PyTableCode)protocolFunc.__code__).co_argcount];
+        System.arraycopy(received, 0, arg, 0, arg.length);
+        PyObject result;
+        try {
+            result = protocolFunc.__call__(arg);
+        } catch (Exception e) {
+            throw new DriverCommand.ScriptException("protocol-function failed", e);
+        }
+        if (result instanceof PyNone) { // for anonymous read-command response
+            requestedDataQueue.clear();
+            requestedDataQueue.put(new Triplet<>(null, received, receivedTime));
+        } else if (result instanceof PyString) { // for read-command response
+            requestedDataQueue.clear();
+            requestedDataQueue.put(new Triplet<>(result.asString(), received, receivedTime));
+        } else if (result instanceof PyList) {
+            var list = new ArrayList<Object>((PyList) result);
+            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
+        } else if (result instanceof PyTuple) {
+            var list = new ArrayList<Object>((PyTuple) result);
+            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
+        } else {
+            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), Arrays.asList(received));
         }
     }
 

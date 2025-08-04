@@ -11,9 +11,7 @@ import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Triplet;
-import org.python.core.PyFunction;
-import org.python.core.PyList;
-import org.python.core.PyObject;
+import org.python.core.*;
 import reactor.core.publisher.Mono;
 import reactor.netty.ByteBufFlux;
 import reactor.netty.http.client.HttpClient;
@@ -25,10 +23,12 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class DriverProtocolHttpClient extends DriverProtocolHttp {
@@ -51,6 +51,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
 
     @Override
     List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+        if (!isReadCommand) throw new DriverCommand.ScriptException("http-client doesn't support write-command");
         var info = objectMapper.readValue(requestInfo, RequestInfo.class);
         var method = HttpMethod.valueOf(info.method == null ? "GET" : info.method);
         var path = (Strings.isNullOrEmpty(info.basePath) ? basePath : info.basePath) + (Strings.isNullOrEmpty(info.path) ? "" : info.path);
@@ -69,17 +70,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         var body = Strings.isNullOrEmpty(info.body) ? new byte[]{} : UtilFunc.stringToByteArray(info.body);
         AtomicReference<Triplet<byte[], HttpHeaders, Integer>> reference = new AtomicReference<>(null);
         AtomicReference<Exception> exception = new AtomicReference<>(null);
-        var client = HttpClient.create();
-        if (info.proxy != null && !Strings.isNullOrEmpty(info.proxy.get("host")) && Ints.tryParse(info.proxy.get("port")) != null)
-            client = client.proxy(typeSpec -> {
-                var spec = typeSpec.type(ProxyProvider.Proxy.valueOf(info.proxy.getOrDefault("type", "HTTP")))
-                        .host(info.proxy.get("host"))
-                        .port(Ints.tryParse(info.proxy.get("port")));
-                if (!Strings.isNullOrEmpty(info.proxy.get("username")))
-                    spec = spec.username(info.proxy.get("username"));
-                if (!Strings.isNullOrEmpty(info.proxy.get("password")))
-                    spec.password(username -> info.proxy.get("password"));
-            });
+        var client = getClient(info);
         syncExecute(() -> {
             try {
                 reference.set(client
@@ -92,9 +83,9 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
                         .request(method)
                         .uri(uri)
                         .send(ByteBufFlux.fromInbound(Mono.just(body)))
-                        .responseSingle((httpClientResponse, byteBufMono) ->
+                        .responseSingle((response, byteBufMono) ->
                                 byteBufMono.asByteArray().map(byteArray ->
-                                        new Triplet<>(byteArray, httpClientResponse.responseHeaders(), httpClientResponse.status().code())))
+                                        new Triplet<>(byteArray, response.responseHeaders(), response.status().code())))
                         .block(Duration.ofMillis(timeout)));
             } catch (Exception e) {
                 exception.set(e);
@@ -107,9 +98,38 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
                 throw new Exception("unknown exception occur");
         }
         var response = reference.get();
+        var headers = new PyDictionary();
+        response.getValue1().forEach(entry -> {
+            var key = entry.getKey();
+            var str = new PyString(entry.getValue());
+            headers.compute(key, (k, v) -> v == null ? new PyList(){{add(str);}} : ((PyList) v).add(str));
+        });
         PyObject[] received;
-        new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0())))
-        return List.of();
+        if (response.getValue0().length != 0) {
+            var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) : stringToPyObject(new String(response.getValue0()));
+            received = new PyObject[] {new PyInteger(response.getValue2()), headers, rcvBody};
+        } else {
+            received = new PyObject[] {new PyInteger(response.getValue2()), headers};
+        }
+
+        return driverCommand.processCommandFunction(received, function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+    }
+
+    private HttpClient getClient(RequestInfo info) {
+        var client = HttpClient.create();
+        if (info.proxy != null && !Strings.isNullOrEmpty(info.proxy.get("host")) && Ints.tryParse(info.proxy.get("port")) != null)
+            client = client.proxy(typeSpec -> {
+                var spec = typeSpec.type(ProxyProvider.Proxy.valueOf(info.proxy.getOrDefault("type", "HTTP")))
+                        .host(info.proxy.get("host"))
+                        .port(Ints.tryParse(info.proxy.get("port")));
+                if (!Strings.isNullOrEmpty(info.proxy.get("username")))
+                    spec = spec.username(info.proxy.get("username"));
+                if (!Strings.isNullOrEmpty(info.proxy.get("password")))
+                    spec.password(username -> info.proxy.get("password"));
+            });
+        if (sslContext != null)
+            client = client.secure(spec -> spec.sslContext(sslContext));
+        return client;
     }
 
     protected SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword) {

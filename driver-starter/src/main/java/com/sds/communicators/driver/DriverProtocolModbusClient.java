@@ -63,7 +63,7 @@ public class DriverProtocolModbusClient extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction cmdFunc, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         var object = objectMapper.readValue(requestInfo, Object.class);
         if (isReadCommand) {
             var readAddress = new ArrayList<ModbusRead>();
@@ -87,12 +87,12 @@ public class DriverProtocolModbusClient extends DriverProtocol {
                 var input = new ArrayList<>();
                 for (var result : results)
                     input.addAll(result);
-                return driverCommand.processCommandFunction(new PyList(input), cmdFunc, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+                return driverCommand.processCommandFunction(new PyList(input), function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
             } else {
                 var input = new ArrayList<PyList>();
                 for (var result : results)
                     input.add(new PyList(result));
-                return driverCommand.processCommandFunction(new PyList(input), cmdFunc, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+                return driverCommand.processCommandFunction(new PyList(input), function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
             }
         } else {
             var writeData = new ArrayList<ModbusWrite>();
