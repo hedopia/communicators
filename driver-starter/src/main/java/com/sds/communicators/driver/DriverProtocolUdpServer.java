@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.Connection;
 import reactor.netty.DisposableChannel;
+import reactor.netty.NettyOutbound;
 import reactor.netty.udp.UdpServer;
 
 import java.net.*;
@@ -104,15 +105,20 @@ public class DriverProtocolUdpServer extends DriverProtocolTcpUdp {
     protected void sendString(RequestInfo requestInfo) {
         var socketAddress = new InetSocketAddress(requestInfo.host, requestInfo.port);
         log.debug("[{}] send to {}, data: {}", deviceId, socketAddress, requestInfo.msg);
-        ((Connection)channel).outbound()
+        var bytes = UtilFunc.stringToByteArray(requestInfo.msg);
+        syncExecute(() -> ((Connection)channel).outbound()
                 .sendObject(
-                        Mono.just(new DatagramPacket(Unpooled.copiedBuffer(UtilFunc.stringToByteArray(requestInfo.msg)),
+                        Mono.just(new DatagramPacket(Unpooled.copiedBuffer(bytes),
                                 socketAddress)))
-                .then().block();
+                .then().block());
     }
 
     @Override
-    protected void sendString(String msg) throws Exception {
-        throw new Exception("sendString with msg is not defined for udp-server");
+    protected void sendString(String msg, NettyOutbound outbound) throws Exception {
+        if (outbound == null)
+            throw new Exception("sendString with msg without outbound is not defined for udp-server");
+        log.debug("[{}] send response data: {}", deviceId, msg);
+        var bytes = UtilFunc.stringToByteArray(msg);
+        syncExecute(() -> outbound.sendByteArray(Mono.just(bytes)).then().block());
     }
 }

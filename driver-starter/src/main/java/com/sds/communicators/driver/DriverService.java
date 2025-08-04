@@ -19,6 +19,10 @@ import feign.RequestLine;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
+import org.python.core.PyFunction;
+import org.python.core.PyObject;
+import org.python.core.PyString;
+import org.python.util.PythonInterpreter;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,15 +35,30 @@ class DriverService {
     private final String driverBasePath;
     private final Object driverMutex = new Object();
     private final Object connectAllMutex = new Object();
+    private final PyFunction jsonLoads;
     final DriverEvents driverEvents = DriverEvents.create();
     final Map<String, DriverProtocol> driverProtocols = new ConcurrentHashMap<>();
     final Map<String, Map<String, Response>> responseMap = new ConcurrentHashMap<>();
 
     ClusterStarter clusterStarter;
 
-    DriverService(DriverStarter driverStarter, String driverBasePath) {
+    DriverService(DriverStarter driverStarter, String driverBasePath) throws Exception{
         this.driverStarter = driverStarter;
         this.driverBasePath = driverBasePath;
+
+        var py = new PythonInterpreter();
+        py.exec("from json import loads as json_loads");
+        jsonLoads = (PyFunction) py.get("json_loads");
+        if (jsonLoads == null) throw new Exception("json loads function is not loaded");
+    }
+
+    PyObject stringToPyObject(String s) {
+        if (Strings.isNullOrEmpty(s)) return null;
+        try {
+            return jsonLoads.__call__(new PyString(s));
+        } catch (Exception e) {
+            return new PyString(s);
+        }
     }
 
     void dispose() {
@@ -255,24 +274,12 @@ class DriverService {
         }
     }
 
-    Object executeCommandIdsOnThread(String deviceId, List<String> commandIdList, String initialValue, boolean isResponseOutput) {
-        AtomicReference<Object> ret = new AtomicReference<>();
-        clusterStarter.syncExecute(() -> ret.set(executeCommandIds(deviceId, commandIdList, initialValue, isResponseOutput)));
-        return ret.get();
-    }
-
-    Object executeCommandsOnThread(String deviceId, Set<Command> commands, String initialValue, boolean isResponseOutput) {
-        AtomicReference<Object> ret = new AtomicReference<>();
-        clusterStarter.syncExecute(() -> ret.set(executeCommands(deviceId, commands, initialValue, isResponseOutput)));
-        return ret.get();
-    }
-
     Object executeCommandIds(String deviceId, List<String> commandIdList, String initialValue, boolean isResponseOutput) {
         var function = isResponseOutput ? "execute" : "request";
         log.info("[{}] try to " + function + " command-ids({})", deviceId, commandIdList);
         if (driverProtocols.containsKey(deviceId)) {
             try {
-                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commandIdList, initialValue, isResponseOutput);
+                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commandIdList, stringToPyObject(initialValue), isResponseOutput);
             } catch (Exception e) {
                 var ret =  "[" + deviceId + "] " + function + " command-ids(" + commandIdList + ") failed";
                 log.error(ret, e);
@@ -290,7 +297,7 @@ class DriverService {
         log.info("[{}] try to " + function + " commands({})", deviceId, UtilFunc.joinCommandId(commands));
         if (driverProtocols.containsKey(deviceId)) {
             try {
-                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commands, initialValue, isResponseOutput);
+                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commands, stringToPyObject(initialValue), isResponseOutput);
             } catch (Exception e) {
                 var ret =  "[" + deviceId + "] " + function + " commands(" + UtilFunc.joinCommandId(commands) + ") failed";
                 log.error(ret, e);

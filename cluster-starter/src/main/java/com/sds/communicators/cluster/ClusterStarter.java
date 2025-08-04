@@ -2,7 +2,6 @@ package com.sds.communicators.cluster;
 
 import com.sds.communicators.common.type.Position;
 import io.netty.channel.Channel;
-import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.functions.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.reactive.function.server.RouterFunctions;
@@ -273,10 +272,6 @@ public class ClusterStarter {
 
     public <U> void parallelExecute(Collection<U> collection, Consumer<U> consumer) {
         redirectFunction.parallelExecute(collection, consumer);
-    }
-
-    public void syncExecute(Action action) {
-        redirectFunction.syncExecute(action);
     }
 
     public <U> void loadBalancedClient(Set<String> urls, Class<U> api, Consumer<U> run) throws Throwable {

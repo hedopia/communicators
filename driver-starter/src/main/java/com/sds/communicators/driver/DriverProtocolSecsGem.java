@@ -55,7 +55,7 @@ abstract class DriverProtocolSecsGem extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         driverCommand.pythonInterpreter.exec("host_device_" + deviceId + ".send_stream_function(" + requestInfo + ")");
         if (!isReadCommand) return null;
         return requestCommand(cmdId, timeout, function, requestedDataQueue, initialValue);
@@ -76,10 +76,10 @@ abstract class DriverProtocolSecsGem extends DriverProtocol {
                 requestedDataQueue.put(new Triplet<>(pyCmdId.asString(), new PyObject[]{received}, receivedTime));
             } else if (pyCmdId instanceof PyList) {
                 var list = new ArrayList<Object>((PyList) pyCmdId);
-                driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), new PyObject[]{received}, receivedTime);
+                driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), new PyObject[]{received}, receivedTime, null);
             } else if (pyCmdId instanceof PyTuple) {
                 var list = new ArrayList<Object>((PyTuple) pyCmdId);
-                driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), new PyObject[]{received}, receivedTime);
+                driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), new PyObject[]{received}, receivedTime, null);
             } else {
                 log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, pyCmdId.getType().getName(), received);
             }

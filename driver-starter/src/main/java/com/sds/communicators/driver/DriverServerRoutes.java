@@ -88,40 +88,40 @@ class DriverServerRoutes {
                         .POST("/execute-commands/{deviceId}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             String deviceId = request.pathVariable("deviceId");
-                            String initialValue = request.queryParam("initial-value").isPresent() ? request.queryParam("initial-value").get() : null;
+                            var initialValue = request.headers().header("initial-value");
                             return request.bodyToMono(new ParameterizedTypeReference<Set<Command>>() {})
                                     .flatMap(commands -> {
-                                        var ret = driverService.executeCommandsOnThread(deviceId, commands, initialValue, true);
+                                        var ret = driverService.executeCommands(deviceId, commands, initialValue.isEmpty() ? null : initialValue.get(0), true);
                                         return executeCommandResponse(ret);
                                     });
                         })
                         .POST("/request-commands/{deviceId}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             String deviceId = request.pathVariable("deviceId");
-                            String initialValue = request.queryParam("initial-value").isPresent() ? request.queryParam("initial-value").get() : null;
+                            var initialValue = request.headers().header("initial-value");
                             return request.bodyToMono(new ParameterizedTypeReference<Set<Command>>() {})
                                     .flatMap(commands -> {
-                                        var ret = driverService.executeCommandsOnThread(deviceId, commands, initialValue, false);
+                                        var ret = driverService.executeCommands(deviceId, commands, initialValue.isEmpty() ? null : initialValue.get(0), false);
                                         return executeCommandResponse(ret);
                                     });
                         })
                         .POST("/execute-command-ids/{deviceId}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             String deviceId = request.pathVariable("deviceId");
-                            String initialValue = request.queryParam("initial-value").isPresent() ? request.queryParam("initial-value").get() : null;
+                            var initialValue = request.headers().header("initial-value");
                             return request.bodyToMono(new ParameterizedTypeReference<List<String>>() {})
                                     .flatMap(commandIdList -> {
-                                        var ret = driverService.executeCommandIdsOnThread(deviceId, commandIdList, initialValue, true);
+                                        var ret = driverService.executeCommandIds(deviceId, commandIdList, initialValue.isEmpty() ? null : initialValue.get(0), true);
                                         return executeCommandResponse(ret);
                                     });
                         })
                         .POST("/request-command-ids/{deviceId}", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             String deviceId = request.pathVariable("deviceId");
-                            String initialValue = request.queryParam("initial-value").isPresent() ? request.queryParam("initial-value").get() : null;
+                            var initialValue = request.headers().header("initial-value");
                             return request.bodyToMono(new ParameterizedTypeReference<List<String>>() {})
                                     .flatMap(commandIdList -> {
-                                        var ret = driverService.executeCommandIdsOnThread(deviceId, commandIdList, initialValue, false);
+                                        var ret = driverService.executeCommandIds(deviceId, commandIdList, initialValue.isEmpty() ? null : initialValue.get(0), false);
                                         return executeCommandResponse(ret);
                                     });
                         })

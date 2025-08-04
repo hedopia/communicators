@@ -249,7 +249,7 @@ public class DriverProtocolModbusServer extends DriverProtocol {
     }
 
     private void executeNonPeriodicCommands(PyObject[] input) throws Exception {
-        driverCommand.executeNonPeriodicCommands(input, ZonedDateTime.now().toInstant().toEpochMilli());
+        driverCommand.executeNonPeriodicCommands(input, ZonedDateTime.now().toInstant().toEpochMilli(), null);
     }
 
     private byte[] readBits(int address, int length, int unitId, boolean isCoil) throws Exception {
@@ -299,7 +299,7 @@ public class DriverProtocolModbusServer extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) {
         log.info("[{}] cmdId={}, requestCommand not supported for modbus server", deviceId, cmdId);
         return null;
     }

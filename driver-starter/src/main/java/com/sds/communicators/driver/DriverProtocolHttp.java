@@ -1,5 +1,6 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sds.communicators.common.struct.Response;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
@@ -19,7 +20,8 @@ import java.util.Map;
 @Slf4j
 abstract class DriverProtocolHttp extends DriverProtocol {
     protected SslContext sslContext;
-    protected PyFunction jsonLoads;
+    protected boolean useByteArrayBody = false;
+
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
         // cert, key, trustCert -> need base64 encoded
@@ -66,15 +68,10 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         } else {
             sslContext = null;
         }
-
-        driverCommand.pythonInterpreter.exec("from json import loads as json_loads");
-        jsonLoads = (PyFunction)driverCommand.pythonInterpreter.get("json_loads");
-        if (jsonLoads == null) throw new Exception("json loads function is not loaded");
+        useByteArrayBody = Boolean.parseBoolean(option.get("useByteArrayBody"));
     }
 
     protected abstract SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword);
     protected abstract SslContextBuilder getSslContextBuilder(KeyManagerFactory keyManagerFactory);
     protected abstract SslContextBuilder getTrustSslContextBuilder(SslContextBuilder sslContextBuilder);
-
-
 }

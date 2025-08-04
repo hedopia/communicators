@@ -65,21 +65,29 @@ public class DriverProtocolTcpServer extends DriverProtocolTcpUdp {
 
     @Override
     protected void sendString(RequestInfo requestInfo) throws Exception {
-        var key = new InetSocketAddress(requestInfo.host, requestInfo.port);
-        if (outboundMap.containsKey(key)) {
-            log.debug("[{}] send to {}, data: {}", deviceId, key, requestInfo.msg);
-            outboundMap.get(key).sendByteArray(Mono.just(UtilFunc.stringToByteArray(requestInfo.msg))).then().block();
+        if (requestInfo.host != null && requestInfo.port != -1) {
+            var key = new InetSocketAddress(requestInfo.host, requestInfo.port);
+            if (outboundMap.containsKey(key)) {
+                log.debug("[{}] send to {}, data: {}", deviceId, key, requestInfo.msg);
+                syncExecute(() -> outboundMap.get(key).sendByteArray(Mono.just(UtilFunc.stringToByteArray(requestInfo.msg))).then().block());
+            } else {
+                throw new Exception("sendString failed " + key + " is not connected");
+            }
         } else {
-            throw new Exception(key + " is not connected");
+            var bytes = UtilFunc.stringToByteArray(requestInfo.msg);
+            for (var entry : outboundMap.entrySet()) {
+                log.debug("[{}] send to {}, data: {}", deviceId, entry.getKey(), requestInfo.msg);
+                syncExecute(() -> entry.getValue().sendByteArray(Mono.just(bytes)).then().block());
+            }
         }
     }
 
     @Override
-    protected void sendString(String msg) {
+    protected void sendString(String msg, NettyOutbound outbound) throws Exception {
+        if (outbound == null)
+            throw new Exception("sendString with msg without outbound is not defined for tcp-server");
+        log.debug("[{}] send response data: {}", deviceId, msg);
         var bytes = UtilFunc.stringToByteArray(msg);
-        for (var entry : outboundMap.entrySet()) {
-            log.debug("[{}] send to {}, data: {}", deviceId, entry.getKey(), msg);
-            entry.getValue().sendByteArray(Mono.just(bytes)).then().block();
-        }
+        syncExecute(() -> outbound.sendByteArray(Mono.just(bytes)).then().block());
     }
 }

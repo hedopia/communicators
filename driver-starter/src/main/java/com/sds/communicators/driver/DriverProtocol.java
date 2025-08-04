@@ -1,5 +1,6 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Command;
@@ -9,6 +10,7 @@ import com.sds.communicators.common.struct.Status;
 import com.sds.communicators.common.type.Position;
 import com.sds.communicators.common.type.StatusCode;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subjects.PublishSubject;
 import lombok.EqualsAndHashCode;
@@ -21,9 +23,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -36,10 +36,12 @@ abstract class DriverProtocol {
     private int initialCommandDelay;
     private final ReentrantLock lock = new ReentrantLock(true);
     private final CompositeDisposable disposables = new CompositeDisposable();
+    private final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newCachedThreadPool();
 
     protected int socketTimeout;
     protected boolean isSetDisconnected = false;
     protected boolean connectionLostOnException = true;
+    protected final ObjectMapper objectMapper = new ObjectMapper();
 
     DriverCommand driverCommand;
     String deviceId;
@@ -153,6 +155,10 @@ abstract class DriverProtocol {
 
     public Device getDevice() {
         return device;
+    }
+
+    public PyObject stringToPyObject(String s) {
+        return driverService.stringToPyObject(s);
     }
 
     /**
@@ -466,6 +472,21 @@ abstract class DriverProtocol {
         return driverService.requestCommandIds(nodeIndex, deviceId, initialValue, commandIdList);
     }
 
+    protected void syncExecute(Action action) {
+        var future = executor.submit(() -> {
+            try {
+                action.run();
+            } catch (Throwable e) {
+                log.trace("[{}] sync-execute failed", deviceId, e);
+            }
+        });
+        try {
+            future.get();
+        } catch (Exception e) {
+            log.trace("[{}] sync-execute interrupted", deviceId, e);
+        }
+    }
+
     /**
      * initialize instance
      */
@@ -492,5 +513,5 @@ abstract class DriverProtocol {
      * @param initialValue initial-value for execute/request-command function
      * @return response
      */
-    abstract List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) throws Exception;
+    abstract List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception;
 }

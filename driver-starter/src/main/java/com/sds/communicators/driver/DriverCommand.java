@@ -115,7 +115,7 @@ class DriverCommand {
             try {
                 lock.lockInterruptibly();
                 try {
-                    executeCommands(startingCmd, null, null);
+                    executeCommands(startingCmd, null, null, null);
                 } finally {
                     lock.unlock();
                 }
@@ -138,7 +138,7 @@ class DriverCommand {
                                             try {
                                                 lock.lockInterruptibly();
                                                 try {
-                                                    executeCommands(entry.getValue(), null, null);
+                                                    executeCommands(entry.getValue(), null, null, null);
                                                 } finally {
                                                     lock.unlock();
                                                 }
@@ -169,14 +169,14 @@ class DriverCommand {
         }
     }
 
-    void executeNonPeriodicCommands(PyObject[] received, Long receivedTime) throws Exception {
+    void executeNonPeriodicCommands(PyObject[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
         try {
             lock.lockInterruptibly();
             try {
                 var nonPeriodicCmd = protocol.device.getCommands().stream()
                         .filter(cmd -> cmd.getPeriodGroup() < 0) // non-periodic group
                         .collect(Collectors.toSet());
-                executeCommands(nonPeriodicCmd, received, receivedTime);
+                executeCommands(nonPeriodicCmd, received, receivedTime, nonPeriodicObject);
             } finally {
                 lock.unlock();
             }
@@ -185,7 +185,7 @@ class DriverCommand {
         }
     }
 
-    void executeNonPeriodicCommands(List<String> commandIdList, PyObject[] received, Long receivedTime) throws Exception {
+    void executeNonPeriodicCommands(List<String> commandIdList, PyObject[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
         try {
             lock.lockInterruptibly();
             try {
@@ -197,7 +197,7 @@ class DriverCommand {
                         throw new Exception("execute non-periodic commands failed, (cmdId: " + cmdId + ") is not registered command");
                 }
 
-                executeCommands(functionList, true, received, receivedTime, null);
+                executeCommands(functionList, true, received, receivedTime, null, nonPeriodicObject);
             } finally {
                 lock.unlock();
             }
@@ -206,7 +206,7 @@ class DriverCommand {
         }
     }
 
-    List<Response> lockedExecuteCommands(List<String> commandIdList, String initialValue, boolean isResponseOutput) throws Exception {
+    List<Response> lockedExecuteCommands(List<String> commandIdList, PyObject initialValue, boolean isResponseOutput) throws Exception {
         lock.lockInterruptibly();
         try {
             List<CommandFunctions> functionList = new ArrayList<>();
@@ -216,56 +216,36 @@ class DriverCommand {
                 else
                     throw new Exception("execute commands failed, (cmdId: " + cmdId + ") is not registered command");
             }
-            return executeCommands(functionList, isResponseOutput, null, null, getInitialValue(initialValue));
+            return executeCommands(functionList, isResponseOutput, null, null, initialValue, null);
         } finally {
             lock.unlock();
         }
     }
 
-    List<Response> lockedExecuteCommands(Set<Command> commands, String initialValue, boolean isResponseOutput) throws Exception {
+    List<Response> lockedExecuteCommands(Set<Command> commands, PyObject initialValue, boolean isResponseOutput) throws Exception {
         lock.lockInterruptibly();
         try {
-            return executeCommands(commands, isResponseOutput, null, null, getInitialValue(initialValue));
+            return executeCommands(commands, isResponseOutput, null, null, initialValue, null);
         } finally {
             lock.unlock();
         }
     }
 
-    private PyObject getInitialValue(String initialValue) {
-        PyObject initialObject;
-        if (!Strings.isNullOrEmpty(initialValue)) {
-            try {
-                var value = objectMapper.readValue(initialValue, new TypeReference<Map<PyString, PyString>>() {});
-                initialObject = new PyDictionary() {{putAll(value);}};
-            } catch (JsonProcessingException e) {
-                try {
-                    var value = objectMapper.readValue(initialValue, new TypeReference<List<PyString>>() {});
-                    initialObject = new PyList(value);
-                } catch (JsonProcessingException ex) {
-                    initialObject = new PyString(initialValue);
-                }
-            }
-        } else {
-            initialObject = null;
-        }
-        return initialObject;
+    private void executeCommands(Set<Command> commands, PyObject[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
+        executeCommands(commands, true, received, receivedTime, null, nonPeriodicObject);
     }
 
-    private void executeCommands(Set<Command> commands, PyObject[] received, Long receivedTime) throws Exception {
-        executeCommands(commands, true, received, receivedTime, null);
-    }
-
-    private List<Response> executeCommands(Set<Command> commands, boolean isResponseOutput, PyObject[] received, Long receivedTime, PyObject initialValue) throws Exception {
+    private List<Response> executeCommands(Set<Command> commands, boolean isResponseOutput, PyObject[] received, Long receivedTime, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         List<CommandFunctions> functionList = new ArrayList<>();
         for (var command : commands)
             functionList.add(functionMap.containsKey(command.getId()) ? functionMap.get(command.getId()) : compileCommandScript(command));
         functionList = functionList.stream().sorted(
                         Comparator.comparingInt((CommandFunctions a) -> a.command.getOrder()))
                 .collect(Collectors.toList());
-        return executeCommands(functionList, isResponseOutput, received, receivedTime, initialValue);
+        return executeCommands(functionList, isResponseOutput, received, receivedTime, initialValue, nonPeriodicObject);
     }
 
-    private List<Response> executeCommands(List<CommandFunctions> functionList, boolean isResponseOutput, PyObject[] received, Long receivedTime, PyObject initialValue) throws Exception {
+    private List<Response> executeCommands(List<CommandFunctions> functionList, boolean isResponseOutput, PyObject[] received, Long receivedTime, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         var ret = new ArrayList<Response>();
         var commandList = new PyList(functionList.stream()
                 .map(function -> new PyString(function.command.getId()))
@@ -277,7 +257,7 @@ class DriverCommand {
             Throwable ex = null;
             try {
                 log.debug("[{}] cmdId={}, execute command (type: {})", protocol.deviceId, function.command.getId(), function.command.getType());
-                var response = getCommandResponse(function.command, function, received, receivedTime, initialValue);
+                var response = getCommandResponse(function.command, function, received, receivedTime, initialValue, nonPeriodicObject);
                 if (response != null) {
                     ret.addAll(response);
                     if (isResponseOutput)
@@ -357,7 +337,7 @@ class DriverCommand {
      * @param command command
      * @return response list
      */
-    private List<Response> getCommandResponse(Command command, CommandFunctions cmdFunctions, PyObject[] received, Long receivedTime, PyObject initialValue) throws Exception {
+    private List<Response> getCommandResponse(Command command, CommandFunctions cmdFunctions, PyObject[] received, Long receivedTime, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         if (received != null && receivedTime != null && command.getType() == CommandType.READ_REQUEST)
             return processCommandFunction(received, cmdFunctions.commandFunction, receivedTime, initialValue);
 
@@ -386,16 +366,19 @@ class DriverCommand {
             } else {
                 throw new ScriptException(String.format("request-info output type is %s, output=%s", result.getType().getName(), result));
             }
+        } else if (Strings.isNullOrEmpty(requestInfo)) {
+            throw new ScriptException("cmdId=" + command.getId() + ", request-info is not defined");
         }
+
         if (protocol.device.isConnectionCommand()) {
             protocol.requestConnect();
             try {
-                return protocol.requestCommand(command.getId(), requestInfo, command.getCommandTimeout(), isReadRequest(command.getType()), cmdFunctions.commandFunction, initialValue);
+                return protocol.requestCommand(command.getId(), requestInfo, command.getCommandTimeout(), isReadRequest(command.getType()), cmdFunctions.commandFunction, initialValue, nonPeriodicObject);
             } finally {
                 protocol.requestDisconnect();
             }
         } else {
-            return protocol.requestCommand(command.getId(), requestInfo, command.getCommandTimeout(), isReadRequest(command.getType()), cmdFunctions.commandFunction, initialValue);
+            return protocol.requestCommand(command.getId(), requestInfo, command.getCommandTimeout(), isReadRequest(command.getType()), cmdFunctions.commandFunction, initialValue, nonPeriodicObject);
         }
     }
 

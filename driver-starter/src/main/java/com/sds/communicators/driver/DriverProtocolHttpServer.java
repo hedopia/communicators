@@ -4,9 +4,12 @@ import com.google.common.base.Strings;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import io.netty.channel.Channel;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContextBuilder;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Triplet;
 import org.python.core.*;
@@ -77,7 +80,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                                     var headers = request.requestHeaders().entries().stream()
                                             .collect(Collectors.toMap(entry -> new PyString(entry.getKey()),
                                                     entry -> new PyString(entry.getValue())));
-                                    return response.sendString(Mono.just("Received: ")).then();
+                                    return response.status(HttpResponseStatus.OK).sendString(Mono.just("Received: ")).then();
                                 }))
                 .bindNow(Duration.ofMillis(socketTimeout));
     }
@@ -91,7 +94,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         log.info("[{}] cmdId={}, requestCommand not supported for http server", deviceId, cmdId);
         return null;
     }
@@ -114,5 +117,13 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
 
     protected SslContextBuilder getTrustSslContextBuilder(SslContextBuilder sslContextBuilder) {
         return sslContextBuilder.clientAuth(ClientAuth.REQUIRE);
+    }
+
+    @Setter
+    @ToString
+    private static class ResponseInfo {
+        Map<String, List<String>> headers;
+        String body;
+        Integer httpStatusCode;
     }
 }

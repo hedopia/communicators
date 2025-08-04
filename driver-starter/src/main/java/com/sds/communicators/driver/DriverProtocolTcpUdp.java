@@ -1,13 +1,12 @@
 package com.sds.communicators.driver;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.google.common.primitives.Ints;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import io.netty.channel.socket.DatagramPacket;
 import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
@@ -22,17 +21,13 @@ import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
 abstract class DriverProtocolTcpUdp extends DriverProtocol {
     private final BlockingQueue<Triplet<String, PyObject[], Long>> requestedDataQueue = new ArrayBlockingQueue<>(10);
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private String host;
     private int port;
     private Byte[] startBytes = null;
@@ -50,7 +45,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
 
     abstract DisposableChannel makeChannel(String host, int port) throws Exception;
     protected abstract void sendString(RequestInfo requestInfo) throws Exception;
-    protected abstract void sendString(String msg) throws Exception;
+    protected abstract void sendString(String msg, NettyOutbound outbound) throws Exception;
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
@@ -121,40 +116,39 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         log.trace("[{}] send byte array: {}", deviceId, requestInfo);
         requestedDataQueue.clear();
-        try {
-            var obj = objectMapper.readValue(requestInfo, Object.class);
-            if (obj instanceof Map) {
-                var map = (Map<?, ?>) obj;
-                var req = new RequestInfo(map.get("message"), map.get("host"), map.get("port"));
-                log.trace("sendString as RequestInfo: {}", requestInfo);
-                // map.get("message") 만 null아닐때 모두에게 send
-                sendString(req);
-            } else {
-                log.trace("sendString as String: {}", obj.toString());
-                sendString(obj.toString());
-            }
-        } catch (JsonProcessingException e) {
-            log.trace("sendString as String: {}", requestInfo);
-            sendString(requestInfo);
+        NettyOutbound outbound = null;
+        if (nonPeriodicObject != null && !(nonPeriodicObject instanceof NettyOutbound))
+            throw new Exception("nonPeriodicObject has wrong variable type: " + nonPeriodicObject.getClass());
+        else if (nonPeriodicObject != null)
+            outbound = (NettyOutbound) nonPeriodicObject;
+        var obj = objectMapper.readValue(requestInfo, Object.class);
+        if (obj instanceof Map) {
+            var map = (Map<?, ?>) obj;
+            var req = new RequestInfo(map.get("message"), map.get("host"), map.get("port"));
+            log.trace("sendString as RequestInfo: {}", requestInfo);
+            sendString(req);
+        } else {
+            log.trace("sendString as String: {}", obj.toString());
+            sendString(obj.toString(), outbound);
         }
         if (!isReadCommand) return null;
         return requestCommand(cmdId, timeout, function, requestedDataQueue, initialValue);
     }
 
-    protected Publisher<Void> udpBuffering(Flux<?> flux, NettyOutbound out) {
+    protected Publisher<Void> udpBuffering(Flux<?> flux, NettyOutbound outbound) {
         return buffering(flux.map(obj -> {
             var data = (DatagramPacket) obj;
             var buf = data.content();
             var bytes = new byte[buf.readableBytes()];
             buf.getBytes(buf.readerIndex(), bytes);
             return new Pair<>(bytes, data.sender());
-        }), out);
+        }), outbound);
     }
 
-    protected Publisher<Void> buffering(Flux<Pair<byte[], InetSocketAddress>> flux, NettyOutbound out) {
+    protected Publisher<Void> buffering(Flux<Pair<byte[], InetSocketAddress>> flux, NettyOutbound outbound) {
         flux = flux.map(pair -> {
             log.trace("[{}] received raw data from {}: {}", deviceId, pair.getValue1(), UtilFunc.printByteData(pair.getValue0()));
             return pair.getValue0() == null ? new Pair<>(new byte[]{}, pair.getValue1()) : pair;
@@ -162,17 +156,17 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         if (bufferTime == 0 && bufferingFunc == null && endBytes == null) {
             return flux
                     .doOnNext(pair -> buffering(
-                            new Packet(pair.getValue1(), UtilFunc.arrayWrapper(pair.getValue0()), combineBufferedData))).then();
+                            new Packet(pair.getValue1(), UtilFunc.arrayWrapper(pair.getValue0()), combineBufferedData), outbound)).then();
         } else {
-            return flux.doOnNext(pair -> buffering(pair, out, true)).then();
+            return flux.doOnNext(pair -> buffering(pair, outbound, true)).then();
         }
     }
 
-    private void buffering(Pair<byte[], InetSocketAddress> pair, NettyOutbound out, boolean isFirst) {
+    private void buffering(Pair<byte[], InetSocketAddress> pair, NettyOutbound outbound, boolean isFirst) {
         try {
-            var socket = bufferingInfo.get(out);
+            var socket = bufferingInfo.get(outbound);
             if (socket == null) {
-                log.error("[{}] bufferingInfo is null for {}", deviceId, out);
+                log.error("[{}] bufferingInfo is null for {}", deviceId, outbound);
                 return;
             }
             socket.lock.lockInterruptibly();
@@ -188,9 +182,9 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                     packet.writeBuffer(data);
 
                 if (isFirst && bufferingFunc != null) {
-                    if (bufferingFunction(socket, packet, data, pair.getValue1(), out)) return;
+                    if (bufferingFunction(socket, packet, data, pair.getValue1(), outbound)) return;
                 } else if (isFirst && endBytes != null) {
-                    if (checkEndBytes(socket, packet, data, pair.getValue1(), out)) return;
+                    if (checkEndBytes(socket, packet, data, pair.getValue1(), outbound)) return;
                 }
 
                 if (packet.isFirstPacket && bufferTime != 0) {
@@ -198,13 +192,13 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                     bufferTimeDisposable = Schedulers.io()
                             .scheduleDirect(() -> {
                                 try {
-                                    var s = bufferingInfo.get(out);
+                                    var s = bufferingInfo.get(outbound);
                                     s.lock.lockInterruptibly();
                                     try {
                                         var p = s.senderDataMap.remove(packet.sender);
                                         if (p != null) {
                                             if (bufferingFunc == null && endBytes == null)
-                                                buffering(p);
+                                                buffering(p, outbound);
                                             else
                                                 log.error("[{}] buffering timeout ({} [ms]):" + p.compositeData.stream().map(UtilFunc::printByteData).collect(Collectors.joining("")), deviceId, bufferTime);
                                         }
@@ -219,17 +213,17 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 socket.lock.unlock();
             }
         } catch (InterruptedException e) {
-            log.debug("[{}] buffering thread interrupted ({})", deviceId, out);
+            log.debug("[{}] buffering thread interrupted ({})", deviceId, outbound);
         }
     }
 
-    private boolean bufferingFunction(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound out) {
+    private boolean bufferingFunction(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
         try {
             PyObject funcResult = bufferingFunc.__call__(packet.pyListBuffer);
             if (funcResult instanceof PyBoolean) {
                 if (((PyBoolean) funcResult).getBooleanValue()) {
                     socket.senderDataMap.remove(packet.sender);
-                    buffering(packet);
+                    buffering(packet, outbound);
                     return true;
                 } else {
                     log.trace("[{}] buffering function continue, data: {}", deviceId, UtilFunc.printByteData(data));
@@ -241,8 +235,8 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 for (int i = 0; i < list.size(); i++)
                     arr[i] = ((Integer) list.get(i)).byteValue();
                 socket.senderDataMap.remove(packet.sender);
-                buffering(packet);
-                buffering(new Pair<>(arr, socketAddress), out, false);
+                buffering(packet, outbound);
+                buffering(new Pair<>(arr, socketAddress), outbound, false);
                 return true;
             } else if (funcResult instanceof PyNone) {
                 log.trace("[{}] buffering-function return none, clear buffer", deviceId);
@@ -256,7 +250,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         return true;
     }
 
-    private boolean checkEndBytes(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound out) {
+    private boolean checkEndBytes(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
         var combinedData = packet.getBuffer();
         var endBytesIdx = UtilFunc.findFirst(combinedData, endBytes, true);
         if (endBytesIdx == -1) {
@@ -270,21 +264,21 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 arr[i] = combinedData[i + start];
             socket.senderDataMap.remove(packet.sender);
             if (arr.length == 0) {
-                buffering(packet);
+                buffering(packet, outbound);
             } else {
                 if (!combineBufferedData) {
                     var last = (PyList) packet.pyListBuffer.pyget(packet.pyListBuffer.size() - 1);
                     for (int i = 0; i < arr.length; i++)
                         last.remove(last.size() - 1);
                 }
-                buffering(packet);
-                buffering(new Pair<>(arr, socketAddress), out, false);
+                buffering(packet, outbound);
+                buffering(new Pair<>(arr, socketAddress), outbound, false);
             }
             return true;
         }
     }
 
-    private void buffering(Packet packet) {
+    private void buffering(Packet packet, NettyOutbound outbound) {
         if (!packet.compositeData.isEmpty() && !isSetDisconnected) {
             bufferingDisposable = Schedulers.io().scheduleDirect(() -> {
                 try {
@@ -295,11 +289,11 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                         var byteDataList = getSubArrays(startBytes, endBytes, combinedData, retainStartEndBytes);
                         for (var byteData : byteDataList) {
                             var received = new PyList(Arrays.asList(byteData));
-                            packetProcessing(new PyObject[]{received, Py.java2py(packet.sender)}, receivedTime);
+                            packetProcessing(new PyObject[]{received, Py.java2py(packet.sender)}, receivedTime, outbound);
                         }
                     } else {
                         log.trace("[{}] buffered raw data:" + packet.compositeData.stream().map(UtilFunc::printByteData).collect(Collectors.joining("")), deviceId);
-                        packetProcessing(new PyObject[]{packet.pyListBuffer, Py.java2py(packet.sender)}, receivedTime);
+                        packetProcessing(new PyObject[]{packet.pyListBuffer, Py.java2py(packet.sender)}, receivedTime, outbound);
                     }
                 } catch (Exception e) {
                     log.error("[{}] packet processing failed:" + packet.compositeData.stream().map(UtilFunc::printByteData).collect(Collectors.joining("")), deviceId, e);
@@ -310,17 +304,17 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         }
     }
 
-    private void packetProcessing(PyObject[] received, long receivedTime) throws Exception {
+    private void packetProcessing(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
         if (protocolFunc != null) {
-            executeProtocolFunc(received, receivedTime);
+            executeProtocolFunc(received, receivedTime, outbound);
         } else {
             requestedDataQueue.clear();
             requestedDataQueue.put(new Triplet<>(null, received, receivedTime));
-            driverCommand.executeNonPeriodicCommands(received, receivedTime);
+            driverCommand.executeNonPeriodicCommands(received, receivedTime, outbound);
         }
     }
 
-    private void executeProtocolFunc(PyObject[] received, long receivedTime) throws Exception {
+    private void executeProtocolFunc(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
         var arg = new PyObject[((PyTableCode)protocolFunc.__code__).co_argcount];
         System.arraycopy(received, 0, arg, 0, arg.length);
         PyObject result;
@@ -337,10 +331,10 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
             requestedDataQueue.put(new Triplet<>(result.asString(), received, receivedTime));
         } else if (result instanceof PyList) {
             var list = new ArrayList<Object>((PyList) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime);
+            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
         } else if (result instanceof PyTuple) {
             var list = new ArrayList<Object>((PyTuple) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime);
+            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
         } else {
             log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), Arrays.asList(received));
         }
@@ -488,11 +482,20 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         int port;
 
         RequestInfo(Object msg, Object host, Object port) throws Exception {
-            if (!(msg instanceof String) || !(host instanceof String) || !(port instanceof Integer))
-                throw new Exception("creating RequestInfo failed, message=" + msg + ", host=" + host + ", port=" + port);
-            this.msg = (String) msg;
-            this.host = (String) host;
-            this.port = (Integer) port;
+            if (msg instanceof String) {
+                if (host instanceof String && port instanceof Integer) {
+                    this.msg = (String) msg;
+                    this.host = (String) host;
+                    this.port = (Integer) port;
+                    return;
+                } else if (host == null && port == null) {
+                    this.msg = (String) msg;
+                    this.host = null;
+                    this.port = -1;
+                    return;
+                }
+            }
+            throw new Exception("creating RequestInfo failed, message=" + msg + ", host=" + host + ", port=" + port);
         }
     }
 }

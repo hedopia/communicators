@@ -7,7 +7,6 @@ import com.digitalpetri.modbus.responses.ReadCoilsResponse;
 import com.digitalpetri.modbus.responses.ReadDiscreteInputsResponse;
 import com.digitalpetri.modbus.responses.ReadHoldingRegistersResponse;
 import com.digitalpetri.modbus.responses.ReadInputRegistersResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import io.netty.buffer.ByteBuf;
@@ -30,7 +29,6 @@ import java.util.stream.Collectors;
 public class DriverProtocolModbusClient extends DriverProtocol {
     private ModbusTcpMaster master;
     private final int BATCH_SIZE = 120;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private String host;
     private int port;
@@ -65,7 +63,7 @@ public class DriverProtocolModbusClient extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction cmdFunc, PyObject initialValue) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction cmdFunc, PyObject initialValue, Object nonPeriodicObject) throws Exception {
         var object = objectMapper.readValue(requestInfo, Object.class);
         if (isReadCommand) {
             var readAddress = new ArrayList<ModbusRead>();

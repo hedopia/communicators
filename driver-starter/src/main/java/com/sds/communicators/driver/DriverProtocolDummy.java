@@ -26,7 +26,7 @@ public class DriverProtocolDummy extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) {
         log.trace("dummy protocol request command");
         return null;
     }

@@ -2,7 +2,6 @@ package com.sds.communicators.cluster;
 
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
-import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.functions.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -179,21 +178,6 @@ class RedirectFunction {
                 future.get();
         } catch (Exception e) {
             log.trace("parallel-execute interrupted", e);
-        }
-    }
-
-    void syncExecute(Action action) {
-        var future = executor.submit(() -> {
-            try {
-                action.run();
-            } catch (Throwable e) {
-                log.trace("sync-execute failed", e);
-            }
-        });
-        try {
-            future.get();
-        } catch (Exception e) {
-            log.trace("sync-execute interrupted", e);
         }
     }
 }
