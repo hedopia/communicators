@@ -1,6 +1,5 @@
 package com.sds.communicators.driver;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
