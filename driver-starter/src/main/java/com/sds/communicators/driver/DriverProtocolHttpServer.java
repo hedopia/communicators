@@ -118,6 +118,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                 return response.status(statusCode).sendByteArray(Mono.just(responseBody)).then();
             }
         } catch (Exception e) {
+            log.error("[{}] request processing failed, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, UtilFunc.printByteData(body), params, headers, e);
             return response.status(HttpResponseStatus.INTERNAL_SERVER_ERROR).sendString(Mono.just(e.getMessage())).then();
         }
     }
