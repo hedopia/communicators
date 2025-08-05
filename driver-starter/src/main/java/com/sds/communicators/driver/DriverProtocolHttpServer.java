@@ -79,8 +79,13 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
     void requestDisconnect() throws Exception {
         if (disposableServer != null)
             disposableServer.disposeNow(Duration.ofMillis(socketTimeout));
-        for (var channel : channels)
-            channel.close().get();
+        for (var channel : channels) {
+            try {
+                channel.close().get();
+            } catch (Exception e) {
+                log.error("[{}] closing channel error", deviceId, e);
+            }
+        }
     }
 
     @Override

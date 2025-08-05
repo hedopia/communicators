@@ -59,8 +59,13 @@ public class DriverProtocolTcpServer extends DriverProtocolTcpUdp {
     @Override
     protected void requestDisconnect() throws Exception {
         super.requestDisconnect();
-        for (Channel channel : channels)
-            channel.close().get();
+        for (Channel channel : channels) {
+            try {
+                channel.close().get();
+            } catch (Exception e) {
+                log.error("[{}] closing channel error", deviceId, e);
+            }
+        }
     }
 
     @Override
