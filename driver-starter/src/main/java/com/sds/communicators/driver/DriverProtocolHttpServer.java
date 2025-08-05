@@ -71,7 +71,8 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                                 .aggregate()
                                 .asByteArray()
                                 .defaultIfEmpty(new byte[]{})
-                                .flatMap(body -> requestProcessing(request, response, body)))
+                                .flatMap(body -> requestProcessing(request, response, body))
+                                .then())
                 .bindNow(Duration.ofMillis(socketTimeout));
     }
 
@@ -118,7 +119,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                 return response.status(statusCode).sendByteArray(Mono.just(responseBody)).then();
             }
         } catch (Exception e) {
-            log.error("[{}] request processing failed, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, UtilFunc.printByteData(body), params, headers, e);
+            log.error("[{}] request processing failed, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, rcvBody, params, headers, e);
             return response.status(HttpResponseStatus.INTERNAL_SERVER_ERROR).sendString(Mono.just(e.getMessage())).then();
         }
     }

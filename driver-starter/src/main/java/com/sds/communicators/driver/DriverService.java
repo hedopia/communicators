@@ -53,7 +53,6 @@ class DriverService {
     }
 
     PyObject stringToPyObject(String s) {
-        if (Strings.isNullOrEmpty(s)) return null;
         try {
             return jsonLoads.__call__(new PyString(s));
         } catch (Exception e) {
