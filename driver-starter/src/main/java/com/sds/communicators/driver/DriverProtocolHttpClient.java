@@ -171,9 +171,9 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
                     .append(basePath)
                     .append("\",");
         if (body instanceof PyString)
-            sb.append("\"body\":\"")
+            sb.append("\"body\":")
                     .append(body)
-                    .append("\",");
+                    .append(",");
         if (params instanceof PyDictionary) {
             sb.append("\"params\":");
             var paramMap = new HashMap<String, List<String>>();
