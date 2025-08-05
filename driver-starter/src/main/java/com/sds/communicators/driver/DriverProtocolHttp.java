@@ -1,11 +1,13 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.python.core.PyDictionary;
 import org.python.core.PyList;
+import org.python.core.PyObject;
 import org.python.core.PyString;
 
 import javax.net.ssl.KeyManagerFactory;
@@ -13,8 +15,7 @@ import javax.net.ssl.TrustManagerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.security.KeyStore;
-import java.util.Base64;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 abstract class DriverProtocolHttp extends DriverProtocol {
@@ -76,6 +77,20 @@ abstract class DriverProtocolHttp extends DriverProtocol {
                 ((PyList) pyHeaders.compute(entry.getKey(), (k, v) -> v == null ? new PyList() : v))
                         .add(new PyString(entry.getValue())));
         return pyHeaders;
+    }
+
+    protected void setHeaders(PyObject[] headers, StringBuilder sb) {
+        var headerMap = new HashMap<String, List<String>>();
+        for (int i = 0; i < headers.length - 1; i += 2)
+            headerMap.compute(headers[i].toString(), (k,v) -> v == null ? new ArrayList<>() : v)
+                    .add(headers[i + 1].toString());
+        if (!headerMap.isEmpty()) {
+            sb.append("\"headers\":");
+            try {
+                sb.append(objectMapper.writeValueAsString(headerMap));
+            } catch (JsonProcessingException ignored) {}
+            sb.append(",");
+        }
     }
 
     protected abstract SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword);

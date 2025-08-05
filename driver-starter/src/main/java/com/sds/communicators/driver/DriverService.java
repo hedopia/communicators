@@ -52,22 +52,30 @@ class DriverService {
         if (jsonLoads == null) throw new Exception("json loads function is not loaded");
     }
 
+    void dispose() {
+        synchronized (driverMutex) {
+            while (!driverProtocols.isEmpty()) {
+                var threads = new ArrayList<Thread>();
+                driverProtocols.keySet().forEach(deviceId ->
+                        threads.add(new Thread(() -> disconnect(deviceId))));
+                threads.forEach(Thread::start);
+                threads.forEach(th -> {
+                    try {
+                        th.join();
+                    } catch (InterruptedException ignored) {}
+                });
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException ignored) {}
+            }
+        }
+    }
+
     PyObject stringToPyObject(String s) {
         try {
             return jsonLoads.__call__(new PyString(s));
         } catch (Exception e) {
             return new PyString(s);
-        }
-    }
-
-    void dispose() {
-        synchronized (driverMutex) {
-            while (!driverProtocols.isEmpty()) {
-                clusterStarter.parallelExecute(driverProtocols.keySet(), this::disconnect);
-                try {
-                    Thread.sleep(3000);
-                } catch (InterruptedException ignored) {}
-            }
         }
     }
 

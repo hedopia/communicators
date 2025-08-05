@@ -201,17 +201,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
             } catch (JsonProcessingException ignored) {}
             sb.append(",");
         }
-        var headerMap = new HashMap<String, List<String>>();
-        for (int i = 0; i < headers.length - 1; i += 2)
-            headerMap.compute(headers[i].toString(), (k,v) -> v == null ? new ArrayList<>() : v)
-                    .add(headers[i + 1].toString());
-        if (!headerMap.isEmpty()) {
-            sb.append("\"headers\":");
-            try {
-                sb.append(objectMapper.writeValueAsString(headerMap));
-            } catch (JsonProcessingException ignored) {}
-            sb.append(",");
-        }
+        setHeaders(headers, sb);
         if (sb.length() > 0) sb.setLength(sb.length() - 1);
         sb.insert(0, "{");
         sb.append("}");
