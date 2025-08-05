@@ -24,7 +24,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
     private final String statusFormat;
     private final Producer<String, String> producer;
 
-    public static Builder Builder(String bootstrapAddress, String responseTopic, String responseFormat, String statusTopic, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+    public static Builder builder(String bootstrapAddress, String responseTopic, String responseFormat, String statusTopic, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
         return new Builder(bootstrapAddress, responseTopic, responseFormat, statusTopic, statusFormat, driverId, clusterStarterBuilder);
     }
 

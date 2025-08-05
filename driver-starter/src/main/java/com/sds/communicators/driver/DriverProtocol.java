@@ -74,6 +74,10 @@ abstract class DriverProtocol {
                 return new DriverProtocolModbusClient().initialize(driverService, driverCommand, device);
             case "modbus-server":
                 return new DriverProtocolModbusServer().initialize(driverService, driverCommand, device);
+            case "http-client":
+                return new DriverProtocolHttpClient().initialize(driverService, driverCommand, device);
+            case "http-server":
+                return new DriverProtocolHttpServer().initialize(driverService, driverCommand, device);
             case "dummy":
                 return new DriverProtocolDummy().initialize(driverService, driverCommand, device);
             default:
@@ -511,6 +515,7 @@ abstract class DriverProtocol {
      * @param isReadCommand which read-command
      * @param function command function
      * @param initialValue initial-value for execute/request-command function
+     * @param nonPeriodicObject object for non-periodic commands
      * @return response
      */
     abstract List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception;

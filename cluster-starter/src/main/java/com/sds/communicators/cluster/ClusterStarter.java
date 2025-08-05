@@ -34,7 +34,7 @@ public class ClusterStarter {
 
     private boolean isStarted = false;
 
-    public static Builder Builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
+    public static Builder builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
         return new Builder(nodeTargetUrls, serverPort, nodeIndex);
     }
 

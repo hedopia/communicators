@@ -6,7 +6,6 @@ import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import io.netty.channel.socket.DatagramPacket;
 import io.reactivex.rxjava3.disposables.Disposable;
-import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
@@ -21,7 +20,10 @@ import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -315,8 +317,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
     }
 
     private void executeProtocolFunc(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
-        var arg = new PyObject[((PyTableCode)protocolFunc.__code__).co_argcount];
-        System.arraycopy(received, 0, arg, 0, arg.length);
+        var arg = driverCommand.getArguments(protocolFunc, received, receivedTime, null);
         PyObject result;
         try {
             result = protocolFunc.__call__(arg);
@@ -474,6 +475,10 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
 
     public String requestInfo(String message, String host, int port) {
         return "{\"message\":\"" + message + "\", \"host\":\"" + host + "\", \"port\":" + port + "}";
+    }
+
+    public String requestInfo(String message) {
+        return "{\"message\":\"" + message + "}";
     }
 
     protected static class RequestInfo {

@@ -1,5 +1,6 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Strings;
 import com.google.common.primitives.Ints;
 import com.sds.communicators.common.UtilFunc;
@@ -10,7 +11,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.javatuples.Triplet;
+import org.javatuples.Quartet;
 import org.python.core.*;
 import reactor.core.publisher.Mono;
 import reactor.netty.ByteBufFlux;
@@ -24,9 +25,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.ZonedDateTime;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -58,17 +57,17 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         var sb = new StringBuilder(path);
         if (info.params != null) {
             sb.append("?");
-            info.params.forEach((key, value) -> {
-                sb.append(URLEncoder.encode(key, StandardCharsets.UTF_8));
-                sb.append("=");
-                sb.append(URLEncoder.encode(value, StandardCharsets.UTF_8));
-                sb.append("&");
-            });
+            info.params.forEach((k, v) -> v.forEach(s ->
+                    sb.append(URLEncoder.encode(k, StandardCharsets.UTF_8))
+                            .append("=")
+                            .append(URLEncoder.encode(s, StandardCharsets.UTF_8))
+                            .append("&")
+            ));
             sb.setLength(sb.length() - 1);
         }
         var uri = URI.create(sb.toString());
         var body = Strings.isNullOrEmpty(info.body) ? new byte[]{} : UtilFunc.stringToByteArray(info.body);
-        AtomicReference<Triplet<byte[], HttpHeaders, Integer>> reference = new AtomicReference<>(null);
+        AtomicReference<Quartet<byte[], HttpHeaders, Integer, Long>> reference = new AtomicReference<>(null);
         AtomicReference<Exception> exception = new AtomicReference<>(null);
         var client = getClient(info);
         syncExecute(() -> {
@@ -85,7 +84,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
                         .send(ByteBufFlux.fromInbound(Mono.just(body)))
                         .responseSingle((response, byteBufMono) ->
                                 byteBufMono.asByteArray().map(byteArray ->
-                                        new Triplet<>(byteArray, response.responseHeaders(), response.status().code())))
+                                        new Quartet<>(byteArray, response.responseHeaders(), response.status().code(), ZonedDateTime.now().toInstant().toEpochMilli())))
                         .block(Duration.ofMillis(timeout)));
             } catch (Exception e) {
                 exception.set(e);
@@ -98,21 +97,10 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
                 throw new Exception("unknown exception occur");
         }
         var response = reference.get();
-        var headers = new PyDictionary();
-        response.getValue1().forEach(entry -> {
-            var key = entry.getKey();
-            var str = new PyString(entry.getValue());
-            headers.compute(key, (k, v) -> v == null ? new PyList(){{add(str);}} : ((PyList) v).add(str));
-        });
-        PyObject[] received;
-        if (response.getValue0().length != 0) {
-            var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) : stringToPyObject(new String(response.getValue0()));
-            received = new PyObject[] {new PyInteger(response.getValue2()), headers, rcvBody};
-        } else {
-            received = new PyObject[] {new PyInteger(response.getValue2()), headers};
-        }
-
-        return driverCommand.processCommandFunction(received, function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+        var headers = getPyHeaders(response.getValue1());
+        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) : stringToPyObject(new String(response.getValue0()));
+        PyObject[] received = new PyObject[] {new PyInteger(response.getValue2()), rcvBody, headers};
+        return driverCommand.processCommandFunction(received, function, response.getValue3(), initialValue);
     }
 
     private HttpClient getClient(RequestInfo info) {
@@ -147,12 +135,86 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
     @Setter
     @ToString
     private static class RequestInfo {
-        Map<String, List<String>> headers;
-        String body;
         String method;
-        String basePath;
         String path;
-        Map<String, String> params;
+        String basePath;
+        String body;
+        Map<String, List<String>> params;
+        Map<String, List<String>> headers;
         Map<String, String> proxy;
+    }
+
+    public String requestInfo(PyObject method, PyObject path, PyObject basePath, PyObject body, PyObject params, PyObject... headers) {
+        return requestInfo(method, path, basePath, body, params, null, null, null, null, null, headers);
+    }
+
+    public String requestInfo(PyObject method, PyObject path, PyObject basePath, PyObject body, PyObject params, PyObject proxyHost, PyObject proxyPort, PyObject... headers) {
+        return requestInfo(method, path, basePath, body, params, null, proxyHost, proxyPort, null, null, headers);
+    }
+    public String requestInfo(PyObject method, PyObject path, PyObject basePath, PyObject body, PyObject params,
+                              PyObject proxyType, PyObject proxyHost, PyObject proxyPort, PyObject proxyUsername, PyObject proxyPassword,
+                              PyObject... headers) {
+        var sb = new StringBuilder();
+        if (method instanceof PyString)
+            sb.append("\"method\":\"")
+                    .append(method)
+                    .append("\",");
+        if (path instanceof PyString)
+            sb.append("\"path\":\"")
+                    .append(path)
+                    .append("\",");
+        if (basePath instanceof PyString)
+            sb.append("\"basePath\":\"")
+                    .append(basePath)
+                    .append("\",");
+        if (body instanceof PyString)
+            sb.append("\"body\":\"")
+                    .append(body)
+                    .append("\",");
+        if (params instanceof PyDictionary) {
+            sb.append("\"params\":");
+            var paramMap = new HashMap<String, List<String>>();
+            ((PyDictionary) params).forEach((k,v) -> {
+                if (v instanceof PyList)
+                    paramMap.put(k.toString(), (List<String>) ((PyList) v).stream().map(Object::toString).collect(Collectors.toList()));
+            });
+            try {
+                sb.append(objectMapper.writeValueAsString(paramMap));
+            } catch (JsonProcessingException ignored) {}
+            sb.append(",");
+        }
+        var proxy = new HashMap<String, String>();
+        if (proxyType instanceof PyString)
+            proxy.put("type", proxyType.toString());
+        if (proxyHost instanceof PyString)
+            proxy.put("host", proxyHost.toString());
+        if (proxyPort instanceof PyInteger)
+            proxy.put("port", proxyPort.toString());
+        if (proxyUsername instanceof PyString)
+            proxy.put("username", proxyUsername.toString());
+        if (proxyPassword instanceof PyString)
+            proxy.put("password", proxyPassword.toString());
+        if (!proxy.isEmpty()) {
+            sb.append("\"proxy\":");
+            try {
+                sb.append(objectMapper.writeValueAsString(proxy));
+            } catch (JsonProcessingException ignored) {}
+            sb.append(",");
+        }
+        var headerMap = new HashMap<String, List<String>>();
+        for (int i = 0; i < headers.length - 1; i += 2)
+            headerMap.compute(headers[i].toString(), (k,v) -> v == null ? new ArrayList<>() : v)
+                    .add(headers[i + 1].toString());
+        if (!headerMap.isEmpty()) {
+            sb.append("\"headers\":");
+            try {
+                sb.append(objectMapper.writeValueAsString(headerMap));
+            } catch (JsonProcessingException ignored) {}
+            sb.append(",");
+        }
+        if (sb.length() > 0) sb.setLength(sb.length() - 1);
+        sb.insert(0, "{");
+        sb.append("}");
+        return sb.toString();
     }
 }

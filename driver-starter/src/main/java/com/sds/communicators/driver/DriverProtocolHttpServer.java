@@ -1,5 +1,6 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
@@ -11,16 +12,17 @@ import io.netty.handler.ssl.SslContextBuilder;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.javatuples.Triplet;
 import org.python.core.*;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
-import reactor.netty.NettyOutbound;
 import reactor.netty.http.server.HttpServer;
+import reactor.netty.http.server.HttpServerRequest;
+import reactor.netty.http.server.HttpServerResponse;
 
 import javax.net.ssl.KeyManagerFactory;
 import java.io.InputStream;
 import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -69,18 +71,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                                 .aggregate()
                                 .asByteArray()
                                 .defaultIfEmpty(new byte[]{})
-                                .flatMap(body -> {
-                                    var decoder = new QueryStringDecoder(request.uri());
-                                    var params = decoder.parameters().entrySet().stream()
-                                            .collect(Collectors.toMap(entry -> new PyString(entry.getKey()),
-                                                    entry -> new PyList(entry.getValue().stream()
-                                                            .map(PyString::new).collect(Collectors.toList()))));
-                                    var path = decoder.path();
-                                    var headers = request.requestHeaders().entries().stream()
-                                            .collect(Collectors.toMap(entry -> new PyString(entry.getKey()),
-                                                    entry -> new PyString(entry.getValue())));
-                                    return response.status(HttpResponseStatus.OK).sendString(Mono.just("Received: ")).then();
-                                }))
+                                .flatMap(body -> requestProcessing(request, response, body)))
                 .bindNow(Duration.ofMillis(socketTimeout));
     }
 
@@ -100,34 +91,58 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         return null;
     }
 
-    private void requestProcessing(PyObject[] received, long receivedTime) throws Exception {
-        if (protocolFunc != null) {
-            executeProtocolFunc(received, receivedTime);
-        } else {
-            driverCommand.executeNonPeriodicCommands(received, receivedTime);
+    private Mono<Void> requestProcessing(HttpServerRequest request, HttpServerResponse response, byte[] body) {
+        var receivedTime = ZonedDateTime.now().toInstant().toEpochMilli();
+        var decoder = new QueryStringDecoder(request.uri());
+        var params = getPyParams(decoder.parameters());
+        var path = decoder.path();
+        var method = request.method().name();
+        var headers = getPyHeaders(request.requestHeaders());
+        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(body))) : stringToPyObject(new String(body));
+        PyObject[] received = new PyObject[]{new PyString(method), new PyString(path), rcvBody, params, headers};
+        var requestInfoList = new ArrayList<String>();
+        try {
+            if (protocolFunc != null)
+                executeProtocolFunc(received, receivedTime, requestInfoList);
+            else
+                driverCommand.executeNonPeriodicCommands(received, receivedTime, requestInfoList);
+            if (requestInfoList.isEmpty()) {
+                return response.status(HttpResponseStatus.OK).then();
+            } else {
+                var requestInfo = requestInfoList.get(requestInfoList.size() - 1);
+                var responseInfo = objectMapper.readValue(requestInfo, ResponseInfo.class);
+                var statusCode = responseInfo.httpStatusCode == null ? 200 : responseInfo.httpStatusCode;
+                var responseBody = Strings.isNullOrEmpty(responseInfo.body) ? new byte[]{} : UtilFunc.stringToByteArray(responseInfo.body);
+                if (responseInfo.headers != null)
+                    responseInfo.headers.forEach((k,v) -> v.forEach(s -> response.header(k, s)));
+                return response.status(statusCode).sendByteArray(Mono.just(responseBody)).then();
+            }
+        } catch (Exception e) {
+            return response.status(HttpResponseStatus.INTERNAL_SERVER_ERROR).sendString(Mono.just(e.getMessage())).then();
         }
     }
-    private void executeProtocolFunc(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
-        var arg = new PyObject[((PyTableCode)protocolFunc.__code__).co_argcount];
-        System.arraycopy(received, 0, arg, 0, arg.length);
+
+    private PyDictionary getPyParams(Map<String, List<String>> params) {
+        var pyParams = new PyDictionary();
+        params.forEach((k, v) ->
+                pyParams.put(new PyString(k), new PyList(v.stream().map(PyString::new).collect(Collectors.toList()))));
+        return pyParams;
+    }
+
+    private void executeProtocolFunc(PyObject[] received, long receivedTime, List<String> requestInfoList) throws Exception {
+        var arg = driverCommand.getArguments(protocolFunc, received, receivedTime, null);
         PyObject result;
         try {
             result = protocolFunc.__call__(arg);
         } catch (Exception e) {
             throw new DriverCommand.ScriptException("protocol-function failed", e);
         }
-        if (result instanceof PyNone) { // for anonymous read-command response
-            requestedDataQueue.clear();
-            requestedDataQueue.put(new Triplet<>(null, received, receivedTime));
-        } else if (result instanceof PyString) { // for read-command response
-            requestedDataQueue.clear();
-            requestedDataQueue.put(new Triplet<>(result.asString(), received, receivedTime));
-        } else if (result instanceof PyList) {
+        if (result instanceof PyList) {
             var list = new ArrayList<Object>((PyList) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
+            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, requestInfoList);
         } else if (result instanceof PyTuple) {
             var list = new ArrayList<Object>((PyTuple) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
+            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, requestInfoList);
         } else {
             log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), Arrays.asList(received));
         }
@@ -147,9 +162,36 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
 
     @Setter
     @ToString
-    private static class ResponseInfo {
-        Map<String, List<String>> headers;
-        String body;
+    public static class ResponseInfo {
         Integer httpStatusCode;
+        String body;
+        Map<String, List<String>> headers;
+    }
+
+    public String requestInfo(PyObject httpStatusCode, PyObject body, PyObject... headers) {
+        var sb = new StringBuilder();
+        if (httpStatusCode instanceof PyInteger)
+            sb.append("\"httpStatusCode\":")
+                    .append(httpStatusCode)
+                    .append(",");
+        if (body instanceof PyString)
+            sb.append("\"body\":\"")
+                    .append(body)
+                    .append("\",");
+        var headerMap = new HashMap<String, List<String>>();
+        for (int i = 0; i < headers.length - 1; i += 2)
+            headerMap.compute(headers[i].toString(), (k,v) -> v == null ? new ArrayList<>() : v)
+                    .add(headers[i + 1].toString());
+        if (!headerMap.isEmpty()) {
+            sb.append("\"headers\":");
+            try {
+                sb.append(objectMapper.writeValueAsString(headerMap));
+            } catch (JsonProcessingException ignored) {}
+            sb.append(",");
+        }
+        if (sb.length() > 0) sb.setLength(sb.length() - 1);
+        sb.insert(0, "{");
+        sb.append("}");
+        return sb.toString();
     }
 }

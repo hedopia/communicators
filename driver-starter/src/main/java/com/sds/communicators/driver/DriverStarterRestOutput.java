@@ -21,7 +21,7 @@ public class DriverStarterRestOutput extends DriverStarter {
     private final String statusPath;
     private final String statusFormat;
 
-    public static Builder Builder(Set<String> restOutputTargetUrls, String responsePath, String responseFormat, String statusPath, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+    public static Builder builder(Set<String> restOutputTargetUrls, String responsePath, String responseFormat, String statusPath, String statusFormat, String driverId, ClusterStarter.Builder clusterStarterBuilder) {
         return new Builder(restOutputTargetUrls, responsePath, responseFormat, statusPath, statusFormat, driverId, clusterStarterBuilder);
     }
 

@@ -1,7 +1,5 @@
 package com.sds.communicators.driver;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.struct.Command;
@@ -424,7 +422,7 @@ class DriverCommand {
         return ret;
     }
 
-    private PyObject[] getArguments(PyFunction function, PyObject[] input, Long receivedTime, PyObject initialValue) throws Exception {
+    PyObject[] getArguments(PyFunction function, PyObject[] input, Long receivedTime, PyObject initialValue) throws Exception {
         int inputCount = input == null ? 0 : input.length;
         if (receivedTime != null)
             inputCount++;

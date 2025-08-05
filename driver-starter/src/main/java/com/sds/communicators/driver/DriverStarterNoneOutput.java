@@ -15,7 +15,7 @@ import java.util.List;
 @Slf4j
 public class DriverStarterNoneOutput extends DriverStarter {
 
-    public static Builder Builder(String driverId, ClusterStarter.Builder clusterStarterBuilder) {
+    public static Builder builder(String driverId, ClusterStarter.Builder clusterStarterBuilder) {
         return new Builder(driverId, clusterStarterBuilder);
     }
 
