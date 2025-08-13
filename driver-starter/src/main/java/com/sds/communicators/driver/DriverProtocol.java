@@ -2,7 +2,6 @@ package com.sds.communicators.driver;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
-import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Command;
 import com.sds.communicators.common.struct.Device;
 import com.sds.communicators.common.struct.Response;
@@ -19,6 +18,8 @@ import org.javatuples.Triplet;
 import org.python.core.PyFunction;
 import org.python.core.PyObject;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -108,9 +109,11 @@ abstract class DriverProtocol {
         } else {
             connection = device.getConnectionUrl().split("://", 2)[1].split("\\?",2);
             if (connection.length == 2) {
-                for (var sp : UtilFunc.stringSplit(connection[1], "&")) {
-                    var keyValue = UtilFunc.stringSplit(sp, "=");
-                    option.put(keyValue.get(0).trim(), keyValue.get(1).trim());
+                for (var sp : connection[1].split("&")) {
+                    var keyValue = sp.split("=");
+                    if (keyValue.length != 2)
+                        throw new Exception("option parsing error, option: " + connection[1]);
+                    option.put(URLDecoder.decode(keyValue[0], StandardCharsets.UTF_8), URLDecoder.decode(keyValue[1], StandardCharsets.UTF_8));
                 }
             }
             initialize(connection[0], option);

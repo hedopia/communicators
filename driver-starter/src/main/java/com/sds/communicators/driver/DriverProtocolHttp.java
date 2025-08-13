@@ -12,10 +12,13 @@ import org.python.core.PyString;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManagerFactory;
-import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.security.KeyStore;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 abstract class DriverProtocolHttp extends DriverProtocol {
@@ -24,13 +27,12 @@ abstract class DriverProtocolHttp extends DriverProtocol {
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
-        // cert, key, trustCert -> need base64 encoded
-        var cert = option.get("cert") != null ? new ByteArrayInputStream(Base64.getDecoder().decode(option.get("cert"))) : null;
+        var cert = option.get("cert") != null ? new FileInputStream(option.get("cert")) : null;
         var format = option.get("format");
         var password = option.get("password");
-        var key = option.get("key") != null ? new ByteArrayInputStream(Base64.getDecoder().decode(option.get("key"))) : null;
+        var key = option.get("key") != null ? new FileInputStream(option.get("key")) : null;
 
-        var trustCert = option.get("trustCert") != null ? new ByteArrayInputStream(Base64.getDecoder().decode(option.get("trustCert"))) : null;
+        var trustCert = option.get("trustCert") != null ? new FileInputStream(option.get("trustCert")) : null;
         var trustFormat = option.get("trustFormat");
         var trustPassword = option.get("trustPassword");
         if (cert != null) {
@@ -91,6 +93,23 @@ abstract class DriverProtocolHttp extends DriverProtocol {
             } catch (JsonProcessingException ignored) {}
             sb.append(",");
         }
+    }
+
+    protected String makeBody(PyObject body) {
+        String ret = "\"\"";
+        if (body instanceof PyString) {
+            try {
+                ret = objectMapper.writeValueAsString(body.toString());
+            } catch (JsonProcessingException ignored) {
+            }
+        } else {
+            try {
+                ret = "\"" + objectMapper.writeValueAsString(body) + "\"";
+            } catch (JsonProcessingException e) {
+                ret = "\"" + body.toString() + "\"";
+            }
+        }
+        return ret;
     }
 
     protected abstract SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword);

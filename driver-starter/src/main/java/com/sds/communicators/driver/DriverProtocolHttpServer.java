@@ -180,9 +180,9 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
             sb.append("\"httpStatusCode\":")
                     .append(httpStatusCode)
                     .append(",");
-        if (body instanceof PyString)
+        if (!(body instanceof PyNone))
             sb.append("\"body\":")
-                    .append(body)
+                    .append(makeBody(body))
                     .append(",");
         setHeaders(headers, sb);
         if (sb.length() > 0) sb.setLength(sb.length() - 1);
