@@ -1,5 +1,6 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Strings;
 import com.google.common.primitives.Ints;
 import com.sds.communicators.common.UtilFunc;
@@ -126,15 +127,20 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
             throw new Exception("nonPeriodicObject has wrong variable type: " + nonPeriodicObject.getClass());
         else if (nonPeriodicObject != null)
             outbound = (NettyOutbound) nonPeriodicObject;
-        var obj = objectMapper.readValue(requestInfo, Object.class);
-        if (obj instanceof Map) {
-            var map = (Map<?, ?>) obj;
-            var req = new RequestInfo(map.get("message"), map.get("host"), map.get("port"));
-            log.trace("sendString as RequestInfo: {}", requestInfo);
-            sendString(req);
-        } else {
-            log.trace("sendString as String: {}", obj.toString());
-            sendString(obj.toString(), outbound);
+        try {
+            var obj = objectMapper.readValue(requestInfo, Object.class);
+            if (obj instanceof Map) {
+                var map = (Map<?, ?>) obj;
+                var req = new RequestInfo(map.get("message"), map.get("host"), map.get("port"));
+                log.trace("sendString as RequestInfo: {}", requestInfo);
+                sendString(req);
+            } else {
+                log.trace("sendString as String: {}", obj.toString());
+                sendString(obj.toString(), outbound);
+            }
+        } catch (JsonProcessingException e) {
+            log.trace("sendString as String: {}", requestInfo);
+            sendString(requestInfo, outbound);
         }
         if (!isReadCommand) return null;
         return requestCommand(cmdId, timeout, function, requestedDataQueue, initialValue);
