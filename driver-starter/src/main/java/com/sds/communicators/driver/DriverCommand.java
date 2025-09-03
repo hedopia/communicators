@@ -1,6 +1,5 @@
 package com.sds.communicators.driver;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.struct.Command;
 import com.sds.communicators.common.struct.Response;
@@ -29,7 +28,6 @@ class DriverCommand {
     private final Map<String, CommandFunctions> functionMap = new HashMap<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final Map<Integer, Set<Command>> periodGroupMap = new HashMap<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private DriverProtocol protocol;
 
     DriverCommand(String defaultScript) {
@@ -45,6 +43,7 @@ class DriverCommand {
 
     void setProtocol(DriverProtocol protocol) throws Exception {
         this.protocol = protocol;
+        pythonInterpreter.set("protocol", protocol);
         for (Command command : protocol.device.getCommands()) {
             log.trace("[{}] cmdId={}, initialize command script", protocol.deviceId, command.getId());
             functionMap.put(command.getId(), compileCommandScript(command));
@@ -251,7 +250,6 @@ class DriverCommand {
 
         for (int i = 0; i < functionList.size(); ) {
             var function = functionList.get(i);
-            pythonInterpreter.set("protocol", protocol);
             Throwable ex = null;
             try {
                 log.debug("[{}] cmdId={}, execute command (type: {})", protocol.deviceId, function.command.getId(), function.command.getType());
