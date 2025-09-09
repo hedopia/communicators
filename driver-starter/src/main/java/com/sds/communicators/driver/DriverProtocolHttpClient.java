@@ -101,7 +101,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         }
         var response = reference.get();
         var headers = getPyHeaders(response.getValue1());
-        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) : stringToPyObject(new String(response.getValue0()));
+        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) : bytesToPyObject(response.getValue0());
         PyObject[] received = new PyObject[] {new PyInteger(response.getValue2()), rcvBody, headers};
         return driverCommand.processCommandFunction(received, function, response.getValue3(), initialValue);
     }
