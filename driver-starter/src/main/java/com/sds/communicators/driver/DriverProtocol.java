@@ -169,7 +169,7 @@ abstract class DriverProtocol {
         return driverService.bytesToPyObject(bytes);
     }
 
-    public PyObject stringToPyObject(String s) {
+    public PyObject stringToPyString(String s) {
         var byteArray = new PyByteArray(s.getBytes(StandardCharsets.UTF_8));
         return byteArray.decode("utf-8");
     }

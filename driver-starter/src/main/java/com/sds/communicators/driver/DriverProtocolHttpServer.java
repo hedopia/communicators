@@ -104,7 +104,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         var method = request.method().name();
         var headers = getPyHeaders(request.requestHeaders());
         var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(body))) : bytesToPyObject(body);
-        PyObject[] received = new PyObject[]{stringToPyObject(method), stringToPyObject(path), rcvBody, params, headers};
+        PyObject[] received = new PyObject[]{stringToPyString(method), stringToPyString(path), rcvBody, params, headers};
         var requestInfoList = new ArrayList<String>();
         try {
             if (protocolFunc != null)

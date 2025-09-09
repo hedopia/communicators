@@ -77,7 +77,7 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         var pyHeaders = new PyDictionary();
         headers.forEach(entry ->
                 ((PyList) pyHeaders.compute(entry.getKey(), (k, v) -> v == null ? new PyList() : v))
-                        .add(stringToPyObject(entry.getValue())));
+                        .add(stringToPyString(entry.getValue())));
         return pyHeaders;
     }
 
