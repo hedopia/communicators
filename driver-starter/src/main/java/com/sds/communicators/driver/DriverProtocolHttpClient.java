@@ -43,12 +43,12 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
     }
     @Override
     void requestConnect() throws Exception {
-        log.info("[{}] http client is not support connect", deviceId);
+        log.trace("[{}] http client requestConnect ignored", deviceId);
     }
 
     @Override
     void requestDisconnect() throws Exception {
-        log.info("[{}] http client is not support disconnect", deviceId);
+        log.trace("[{}] http client requestDisconnect ignored", deviceId);
     }
 
     @Override
@@ -103,6 +103,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         var headers = getPyHeaders(response.getValue1());
         var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) :
                 stringToPyObject(new String(response.getValue0(), StandardCharsets.UTF_8));
+        log.trace("[{}] response received, body={}, headers={}", deviceId, rcvBody, headers);
         PyObject[] received = new PyObject[] {new PyInteger(response.getValue2()), rcvBody, headers};
         return driverCommand.processCommandFunction(received, function, response.getValue3(), initialValue);
     }
