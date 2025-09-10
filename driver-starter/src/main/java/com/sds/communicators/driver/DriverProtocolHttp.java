@@ -5,10 +5,7 @@ import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.PyDictionary;
-import org.python.core.PyList;
-import org.python.core.PyObject;
-import org.python.core.PyString;
+import org.python.core.*;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManagerFactory;
@@ -77,7 +74,7 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         var pyHeaders = new PyDictionary();
         headers.forEach(entry ->
                 ((PyList) pyHeaders.compute(entry.getKey(), (k, v) -> v == null ? new PyList() : v))
-                        .add(stringToPyString(entry.getValue())));
+                        .add(new PyUnicode(entry.getValue())));
         return pyHeaders;
     }
 

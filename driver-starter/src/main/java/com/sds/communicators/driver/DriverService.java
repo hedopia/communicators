@@ -19,12 +19,11 @@ import feign.RequestLine;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
-import org.python.core.PyByteArray;
 import org.python.core.PyFunction;
 import org.python.core.PyObject;
+import org.python.core.PyUnicode;
 import org.python.util.PythonInterpreter;
 
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -73,12 +72,7 @@ class DriverService {
     }
 
     PyObject stringToPyObject(String s) {
-        return bytesToPyObject(s.getBytes(StandardCharsets.UTF_8));
-    }
-
-    PyObject bytesToPyObject(byte[] bytes) {
-        var byteArray = new PyByteArray(bytes);
-        var unicode = byteArray.decode("utf-8");
+        var unicode = new PyUnicode(s);
         try {
             return jsonLoads.__call__(unicode);
         } catch (Exception e) {

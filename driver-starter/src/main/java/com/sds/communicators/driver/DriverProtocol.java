@@ -15,7 +15,6 @@ import io.reactivex.rxjava3.subjects.PublishSubject;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Triplet;
-import org.python.core.PyByteArray;
 import org.python.core.PyFunction;
 import org.python.core.PyObject;
 
@@ -165,13 +164,8 @@ abstract class DriverProtocol {
         return device;
     }
 
-    public PyObject bytesToPyObject(byte[] bytes) {
-        return driverService.bytesToPyObject(bytes);
-    }
-
-    public PyObject stringToPyString(String s) {
-        var byteArray = new PyByteArray(s.getBytes(StandardCharsets.UTF_8));
-        return byteArray.decode("utf-8");
+    public PyObject stringToPyObject(String s) {
+        return driverService.stringToPyObject(s);
     }
 
     /**

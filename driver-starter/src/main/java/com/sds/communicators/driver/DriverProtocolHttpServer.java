@@ -20,6 +20,7 @@ import reactor.netty.http.server.HttpServerResponse;
 
 import javax.net.ssl.KeyManagerFactory;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.*;
@@ -103,8 +104,9 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         var path = decoder.path();
         var method = request.method().name();
         var headers = getPyHeaders(request.requestHeaders());
-        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(body))) : bytesToPyObject(body);
-        PyObject[] received = new PyObject[]{stringToPyString(method), stringToPyString(path), rcvBody, params, headers};
+        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(body))) :
+                stringToPyObject(new String(body, StandardCharsets.UTF_8));
+        PyObject[] received = new PyObject[]{new PyUnicode(method), new PyUnicode(path), rcvBody, params, headers};
         var requestInfoList = new ArrayList<String>();
         try {
             if (protocolFunc != null)
