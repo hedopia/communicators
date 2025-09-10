@@ -70,6 +70,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         }
         var uri = URI.create(sb.toString());
         var body = Strings.isNullOrEmpty(info.body) ? new byte[]{} : UtilFunc.stringToByteArray(info.body);
+        log.trace("[{}] send request, method={}, path={}, body={}, params={}, headers={}", deviceId, method.toString(), path, info.body, info.params, info.headers);
         AtomicReference<Quartet<byte[], HttpHeaders, Integer, Long>> reference = new AtomicReference<>(null);
         AtomicReference<Exception> exception = new AtomicReference<>(null);
         var client = getClient(info);
@@ -103,7 +104,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         var headers = getPyHeaders(response.getValue1());
         var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(response.getValue0()))) :
                 stringToPyObject(new String(response.getValue0(), StandardCharsets.UTF_8));
-        log.trace("[{}] response received, body={}, headers={}", deviceId, rcvBody, headers);
+        log.trace("[{}] response received, httpStatusCode={}, body={}, headers={}", deviceId, response.getValue2(), toString(rcvBody), headers);
         PyObject[] received = new PyObject[] {new PyInteger(response.getValue2()), rcvBody, headers};
         return driverCommand.processCommandFunction(received, function, response.getValue3(), initialValue);
     }

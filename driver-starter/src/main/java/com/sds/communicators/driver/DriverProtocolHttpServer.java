@@ -106,7 +106,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         var headers = getPyHeaders(request.requestHeaders());
         var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(body))) :
                 stringToPyObject(new String(body, StandardCharsets.UTF_8));
-        log.trace("[{}] request received, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, rcvBody, params, headers);
+        log.trace("[{}] request received, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, toString(rcvBody), params, headers);
         PyObject[] received = new PyObject[]{new PyUnicode(method), new PyUnicode(path), rcvBody, params, headers};
         var requestInfoList = new ArrayList<String>();
         try {
@@ -115,6 +115,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
             else
                 driverCommand.executeNonPeriodicCommands(received, receivedTime, requestInfoList);
             if (requestInfoList.isEmpty()) {
+                log.trace("[{}] send OK response", deviceId);
                 return response.status(HttpResponseStatus.OK).then();
             } else {
                 var requestInfo = requestInfoList.get(requestInfoList.size() - 1);
@@ -123,10 +124,11 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                 var responseBody = Strings.isNullOrEmpty(responseInfo.body) ? new byte[]{} : UtilFunc.stringToByteArray(responseInfo.body);
                 if (responseInfo.headers != null)
                     responseInfo.headers.forEach((k,v) -> v.forEach(s -> response.header(k, s)));
+                log.trace("[{}] send response, httpStatusCode={}, body={}, headers={}", deviceId, statusCode, responseInfo.body, responseInfo.headers);
                 return response.status(statusCode).sendByteArray(Mono.just(responseBody)).then();
             }
         } catch (Exception e) {
-            log.error("[{}] request processing failed, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, rcvBody, params, headers, e);
+            log.error("[{}] request processing failed, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, toString(rcvBody), params, headers, e);
             return response.status(HttpResponseStatus.INTERNAL_SERVER_ERROR).sendString(Mono.just(e.getMessage())).then();
         }
     }
@@ -153,7 +155,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
             var list = new ArrayList<Object>((PyTuple) result);
             driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, requestInfoList);
         } else {
-            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), Arrays.asList(received));
+            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), toString(Arrays.asList(received)));
         }
     }
 
