@@ -24,6 +24,7 @@ import org.python.core.PyObject;
 import org.python.core.PyUnicode;
 import org.python.util.PythonInterpreter;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -145,7 +146,7 @@ class DriverService {
 
     private String errorParser(Throwable e) {
         if (e instanceof FeignException && ((FeignException)e).responseBody().isPresent())
-            return new String(((FeignException)e).responseBody().get().array());
+            return new String(((FeignException)e).responseBody().get().array(), StandardCharsets.UTF_8);
         else
             return e.getMessage();
     }

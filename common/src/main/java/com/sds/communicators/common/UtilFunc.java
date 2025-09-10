@@ -3,6 +3,7 @@ package com.sds.communicators.common;
 import com.sds.communicators.common.struct.Command;
 import com.sds.communicators.common.struct.Device;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -37,7 +38,7 @@ public class UtilFunc {
                     if (arr[c] < 0x20 || arr[c] > 0x7e)
                         arr[c] = 0x2e;
                 }
-                hex.append(" |").append(String.format("%-16s", new String(arr))).append("|\n");
+                hex.append(" |").append(String.format("%-16s", new String(arr, StandardCharsets.US_ASCII))).append("|\n");
             }
         }
         hex.append("+--------+-------------------------------------------------+----------------+\n");
