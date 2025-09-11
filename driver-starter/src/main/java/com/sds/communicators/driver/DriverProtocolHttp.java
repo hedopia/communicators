@@ -92,16 +92,6 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         }
     }
 
-    protected String toString(Object obj) {
-        if (obj instanceof PyString) return ((PyString) obj).asString();
-        else if (obj instanceof String) return (String) obj;
-        try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (JsonProcessingException e) {
-            return obj.toString();
-        }
-    }
-
     protected String makeBody(PyObject body) {
         String ret = "\"\"";
         if (body instanceof PyString) {

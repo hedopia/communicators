@@ -1,5 +1,6 @@
 package com.sds.communicators.driver;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.struct.Command;
@@ -17,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Triplet;
 import org.python.core.PyFunction;
 import org.python.core.PyObject;
+import org.python.core.PyString;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -164,8 +166,18 @@ abstract class DriverProtocol {
         return device;
     }
 
-    public PyObject stringToPyObject(String s) {
+    protected PyObject stringToPyObject(String s) {
         return driverService.stringToPyObject(s);
+    }
+
+    protected String toString(Object obj) {
+        if (obj instanceof PyString) return ((PyString) obj).asString();
+        else if (obj instanceof String) return (String) obj;
+        try {
+            return objectMapper.writeValueAsString(obj);
+        } catch (JsonProcessingException e) {
+            return obj.toString();
+        }
     }
 
     /**
