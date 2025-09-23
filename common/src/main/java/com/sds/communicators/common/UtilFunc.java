@@ -341,14 +341,14 @@ public class UtilFunc {
 
         int bsCnt = 0;
         int size = 0;
-        var ret = new byte[data.getBytes().length];
+        var ret = new byte[data.getBytes(StandardCharsets.UTF_8).length];
         for (int i = 0; i < data.length(); i++) {
             if (data.charAt(i) == '\\') {
                 bsCnt++;
             } else {
                 for (int c = 0; c < (bsCnt >> 1); c++) ret[size++] = '\\';
                 if ((bsCnt & 1) == 0) {
-                    var src = data.substring(i, i + 1).getBytes();
+                    var src = data.substring(i, i + 1).getBytes(StandardCharsets.UTF_8);
                     System.arraycopy(src, 0, ret, size, src.length);
                     size += src.length;
                 } else {
@@ -365,7 +365,7 @@ public class UtilFunc {
                     } else if (data.charAt(i) == 't') {
                         ret[size++] = '\t';
                     } else {
-                        var src = data.substring(i, i + 1).getBytes();
+                        var src = data.substring(i, i + 1).getBytes(StandardCharsets.UTF_8);
                         System.arraycopy(src, 0, ret, size, src.length);
                         size += src.length;
                     }
