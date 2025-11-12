@@ -40,10 +40,12 @@ public class DriverProtocolTcpServer extends DriverProtocolTcpUdp {
                 .port(port)
                 .doOnConnection(c -> {
                     var address = (InetSocketAddress) c.channel().remoteAddress();
+                    log.trace("[{}] channel({}) connected", deviceId, address);
                     outboundMap.put(address, c.outbound());
                     channels.add(c.channel());
                     bufferingInfo.put(c.outbound(), new Socket());
                     c.onDispose(() -> {
+                        log.trace("[{}] channel({}) disconnected", deviceId, c.channel().remoteAddress());
                         channels.remove(c.channel());
                         outboundMap.remove(address);
                         bufferingInfo.remove(c.outbound());

@@ -26,8 +26,12 @@ public class DriverProtocolUdpClient extends DriverProtocolTcpUdp {
                 .wiretap(true)
                 .host(host)
                 .port(port)
-                .doOnConnected(c -> bufferingInfo.put(c.outbound(), new Socket()))
+                .doOnConnected(c -> {
+                    log.trace("[{}] channel connected", deviceId);
+                    bufferingInfo.put(c.outbound(), new Socket());
+                })
                 .doOnDisconnected(c -> {
+                    log.trace("[{}] channel disconnected", deviceId);
                     bufferingInfo.remove(c.outbound());
                     if (!device.isConnectionCommand())
                         setConnectionLost();

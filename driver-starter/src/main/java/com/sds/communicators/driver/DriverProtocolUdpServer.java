@@ -65,8 +65,14 @@ public class DriverProtocolUdpServer extends DriverProtocolTcpUdp {
 
         return server
                 .port(port)
-                .doOnBound(c -> bufferingInfo.put(c.outbound(), new Socket()))
-                .doOnUnbound(c -> bufferingInfo.remove(c.outbound()))
+                .doOnBound(c -> {
+                    log.trace("[{}] channel({}) connected", deviceId, c.channel().remoteAddress());
+                    bufferingInfo.put(c.outbound(), new Socket());
+                })
+                .doOnUnbound(c -> {
+                    log.trace("[{}] channel({}) disconnected", deviceId, c.channel().remoteAddress());
+                    bufferingInfo.remove(c.outbound());
+                })
                 .handle((in, out) -> {
                     while (iFaces.hasMoreElements()) {
                         NetworkInterface iFace = iFaces.nextElement();

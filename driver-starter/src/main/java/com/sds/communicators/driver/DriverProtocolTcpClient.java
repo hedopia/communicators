@@ -1,6 +1,7 @@
 package com.sds.communicators.driver;
 
 import com.sds.communicators.common.UtilFunc;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
@@ -17,6 +18,7 @@ import java.util.Map;
 
 @Slf4j
 public class DriverProtocolTcpClient extends DriverProtocolTcpUdp {
+    private Channel channel = null;
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
@@ -30,8 +32,13 @@ public class DriverProtocolTcpClient extends DriverProtocolTcpUdp {
                 .wiretap(true)
                 .host(host)
                 .port(port)
-                .doOnConnected(c -> bufferingInfo.put(c.outbound(), new Socket()))
+                .doOnConnected(c -> {
+                    log.trace("[{}] channel connected", deviceId);
+                    channel = c.channel();
+                    bufferingInfo.put(c.outbound(), new Socket());
+                })
                 .doOnDisconnected(c -> {
+                    log.trace("[{}] channel disconnected", deviceId);
                     bufferingInfo.remove(c.outbound());
                     if (!device.isConnectionCommand())
                         setConnectionLost();
@@ -42,6 +49,19 @@ public class DriverProtocolTcpClient extends DriverProtocolTcpUdp {
                     return buffering(in.receive().asByteArray().map(bytes -> new Pair<>(bytes, address)), out);
                 })
                 .connectNow(Duration.ofMillis(socketTimeout));
+    }
+
+
+    @Override
+    protected void requestDisconnect() throws Exception {
+        super.requestDisconnect();
+        if (channel != null) {
+            try {
+                channel.close().get();
+            } catch (Exception e) {
+                log.error("[{}] closing channel error", deviceId, e);
+            }
+        }
     }
 
     @Override
