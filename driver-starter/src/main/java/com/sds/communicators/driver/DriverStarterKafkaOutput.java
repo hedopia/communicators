@@ -97,7 +97,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
     }
 
     @Override
-    void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
+    protected void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
         try {
             for (String response : getResponseFormat(responses, driverId, nodeIndex, responseFormat)) {
                 producer.send(new ProducerRecord<>(responseTopic, response));
@@ -108,7 +108,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
     }
 
     @Override
-    void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
+    protected void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
         try {
             producer.send(new ProducerRecord<>(statusTopic, getStatusFormat(deviceStatus, driverId, nodeIndex, statusFormat)));
         } catch (Exception e) {

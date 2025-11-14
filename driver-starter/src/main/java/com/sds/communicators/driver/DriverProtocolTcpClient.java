@@ -18,7 +18,7 @@ import java.util.Map;
 
 @Slf4j
 public class DriverProtocolTcpClient extends DriverProtocolTcpUdp {
-    private Channel channel = null;
+    private Channel tcpChannel = null;
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
@@ -34,7 +34,7 @@ public class DriverProtocolTcpClient extends DriverProtocolTcpUdp {
                 .port(port)
                 .doOnConnected(c -> {
                     log.trace("[{}] channel connected", deviceId);
-                    channel = c.channel();
+                    tcpChannel = c.channel();
                     bufferingInfo.put(c.outbound(), new Socket());
                 })
                 .doOnDisconnected(c -> {
@@ -55,9 +55,9 @@ public class DriverProtocolTcpClient extends DriverProtocolTcpUdp {
     @Override
     protected void requestDisconnect() throws Exception {
         super.requestDisconnect();
-        if (channel != null) {
+        if (tcpChannel != null) {
             try {
-                channel.close().get();
+                tcpChannel.close().get();
             } catch (Exception e) {
                 log.error("[{}] closing channel error", deviceId, e);
             }

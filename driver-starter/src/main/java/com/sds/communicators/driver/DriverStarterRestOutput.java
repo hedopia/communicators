@@ -90,7 +90,7 @@ public class DriverStarterRestOutput extends DriverStarter {
     }
 
     @Override
-    void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
+    protected void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
         try {
             getClusterStarter().loadBalancedClient(restOutputTargetUrls,
                     DriverRestClientApi.class,
@@ -105,7 +105,7 @@ public class DriverStarterRestOutput extends DriverStarter {
     }
 
     @Override
-    void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
+    protected void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
         try {
             getClusterStarter().loadBalancedClient(restOutputTargetUrls,
                     DriverRestClientApi.class,

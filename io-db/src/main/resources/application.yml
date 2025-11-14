@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: IO-${io.driver-id}
+    cloud:
+      loadbalancer:
+        cache:
+          enabled: false
+    http:
+      codecs:
+        max-in-memory-size: -1
+
+server:
+  port: 4001
+
+logging:
+  file:
+    name: log/io-${io.driver-id}.log
+  logback:
+    rolling-policy:
+      max-history: 1
+
+io:
+  driver-id: DRIVER
+  load-balancing: false
+  driver-base-path: /driver
+  node-index: 1
+  quorum: 1
+  leader-lost-timeout-seconds: 0 # 30 sec
+  heartbeat-sending-interval-millis: 2000 # 2 sec
+  node-target-urls: http://127.0.0.1:${server.port}
+  cluster-base-path: /cluster
+  connect-timeout-millis: 1000 # 1 sec
+  read-timeout-millis: 60000 # 60 sec

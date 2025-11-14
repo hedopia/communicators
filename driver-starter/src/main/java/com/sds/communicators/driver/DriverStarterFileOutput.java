@@ -75,7 +75,7 @@ public class DriverStarterFileOutput extends DriverStarter {
     }
 
     @Override
-    void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
+    protected void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
         try {
             try (FileWriter fileWriter = new FileWriter("./" + responseFile + ".csv", true)) {
                 try (CSVPrinter csvPrinter = new CSVPrinter(fileWriter, CSVFormat.RFC4180)) {
@@ -92,7 +92,7 @@ public class DriverStarterFileOutput extends DriverStarter {
     }
 
     @Override
-    void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
+    protected void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
         try {
             try (FileWriter fileWriter = new FileWriter("./" + statusFile + ".csv", true)) {
                 try (CSVPrinter csvPrinter = new CSVPrinter(fileWriter, CSVFormat.RFC4180)) {

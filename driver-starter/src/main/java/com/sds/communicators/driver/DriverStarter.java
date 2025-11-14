@@ -39,8 +39,8 @@ public abstract class DriverStarter {
     final String defaultScript;
     final ObjectMapper objectMapper = new ObjectMapper();
 
-    abstract void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception;
-    abstract void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception;
+    protected abstract void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception;
+    protected abstract void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception;
 
     private final ClusterStarter clusterStarter;
     private final DriverService driverService;
@@ -101,7 +101,7 @@ public abstract class DriverStarter {
         public abstract DriverStarter build() throws Exception;
     }
 
-    DriverStarter(String driverId,
+    protected DriverStarter(String driverId,
                   boolean loadBalancing,
                   String defaultScript,
                   DriverEvents driverEvents,

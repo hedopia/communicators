@@ -5,10 +5,17 @@ import com.sds.communicators.common.struct.Device;
 import com.sds.communicators.common.type.StatusCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,9 +24,32 @@ import java.util.stream.Collectors;
 
 @Slf4j
 class DriverServerRoutes {
-    static RouterFunctions.Builder getDriverServerRoutes(DriverStarter driverStarter, DriverService driverService, String driverBasePath, RouterFunctions.Builder addRouterFunctionBuilder) {
+    static RouterFunctions.Builder getDriverServerRoutes(DriverStarter driverStarter, DriverService driverService, String driverBasePath, RouterFunctions.Builder addRouterFunctionBuilder) throws IOException {
+        String template;
+        try (InputStream in = new ClassPathResource("static/index.html").getInputStream()) {
+            byte[] bytes = in.readAllBytes();
+            template = new String(bytes, StandardCharsets.UTF_8);
+        }
+        var html = template.replace("__APP_BASE_PATH__", driverBasePath);
         var routerFunctionBuilder = RouterFunctions.route().path(driverBasePath, builder ->
                 builder
+                        .GET("/assets/{path}", request -> {
+                            log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
+                            String path = request.pathVariable("path");
+                            var resource = new ClassPathResource("static/assets/" + path);
+                            var mediaType = MediaTypeFactory
+                                    .getMediaType(resource)
+                                    .orElse(MediaType.APPLICATION_OCTET_STREAM);
+                            return ServerResponse.ok()
+                                    .contentType(mediaType)
+                                    .bodyValue(resource);
+                        })
+                        .GET("/", request -> {
+                            log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
+                            return ServerResponse.ok()
+                                    .contentType(MediaType.TEXT_HTML)
+                                    .bodyValue(html);
+                        })
                         .POST("/balanced-connect-all", request -> {
                             log.trace(request.uri().getRawPath() + (request.uri().getRawQuery() != null ? "?" + request.uri().getRawQuery() : ""));
                             return request.bodyToMono(new ParameterizedTypeReference<Set<Device>>() {})
