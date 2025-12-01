@@ -52,40 +52,40 @@ abstract class DriverProtocol {
     boolean isConnectionLostOccur = false;
     PublishSubject<List<Response>> onResponse = PublishSubject.create();
 
-    static DriverProtocol build(DriverService driverService, DriverCommand driverCommand, Device device) throws Exception {
+    static DriverProtocol build(DriverService driverService, String defaultScript, Device device) throws Exception {
         String protocolType = device.getConnectionUrl().split("://")[0];
         switch (protocolType) {
             case "tcp-client":
-                return new DriverProtocolTcpClient().create(driverService, driverCommand, device);
+                return new DriverProtocolTcpClient().create(driverService, defaultScript, device);
             case "tcp-server":
-                return new DriverProtocolTcpServer().create(driverService, driverCommand, device);
+                return new DriverProtocolTcpServer().create(driverService, defaultScript, device);
             case "udp-client":
-                return new DriverProtocolUdpClient().create(driverService, driverCommand, device);
+                return new DriverProtocolUdpClient().create(driverService, defaultScript, device);
             case "udp-server":
-                return new DriverProtocolUdpServer().create(driverService, driverCommand, device);
+                return new DriverProtocolUdpServer().create(driverService, defaultScript, device);
             case "secsgem-client":
-                return new DriverProtocolSecsGemClient().create(driverService, driverCommand, device);
+                return new DriverProtocolSecsGemClient().create(driverService, defaultScript, device);
             case "secsgem-server":
-                return new DriverProtocolSecsGemServer().create(driverService, driverCommand, device);
+                return new DriverProtocolSecsGemServer().create(driverService, defaultScript, device);
             case "modbus-client":
-                return new DriverProtocolModbusClient().create(driverService, driverCommand, device);
+                return new DriverProtocolModbusClient().create(driverService, defaultScript, device);
             case "modbus-server":
-                return new DriverProtocolModbusServer().create(driverService, driverCommand, device);
+                return new DriverProtocolModbusServer().create(driverService, defaultScript, device);
             case "http-client":
-                return new DriverProtocolHttpClient().create(driverService, driverCommand, device);
+                return new DriverProtocolHttpClient().create(driverService, defaultScript, device);
             case "http-server":
-                return new DriverProtocolHttpServer().create(driverService, driverCommand, device);
+                return new DriverProtocolHttpServer().create(driverService, defaultScript, device);
             case "dummy":
-                return new DriverProtocolDummy().create(driverService, driverCommand, device);
+                return new DriverProtocolDummy().create(driverService, defaultScript, device);
             default:
                 throw new Exception("[" + device.getId() + "] not found protocol: " + device.getConnectionUrl());
         }
     }
 
-    protected DriverProtocol create(DriverService driverService, DriverCommand driverCommand, Device device) throws Exception {
+    protected DriverProtocol create(DriverService driverService, String defaultScript, Device device) throws Exception {
         log.trace("[{}] create", device.getId());
         this.driverService = driverService;
-        this.driverCommand = driverCommand;
+        this.driverCommand = new DriverCommand(defaultScript);
         this.device = device;
         deviceId = device.getId();
         socketTimeout = device.getSocketTimeout();

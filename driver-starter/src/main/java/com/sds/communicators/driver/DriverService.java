@@ -166,7 +166,7 @@ class DriverService {
             var deviceSet = new HashSet<Device>();
             for (Device device : devices) {
                 try {
-                    protocols.add(DriverProtocol.build(this, new DriverCommand(driverStarter.defaultScript), device));
+                    protocols.add(DriverProtocol.build(this, driverStarter.defaultScript, device));
                     deviceSet.add(device);
                 } catch (Exception e) {
                     log.error("[{}] connect failed", device.getId(), e);
@@ -272,7 +272,7 @@ class DriverService {
             clusterStarter.parallelExecute(driverProtocols.entrySet(), entry -> {
                 var result = entry.getValue().changeStatus(StatusCode.DISCONNECTED);
                 if (result == null) {
-                    var protocol = DriverProtocol.build(this, new DriverCommand(driverStarter.defaultScript), entry.getValue().device);
+                    var protocol = DriverProtocol.build(this, driverStarter.defaultScript, entry.getValue().device);
                     driverProtocols.put(entry.getKey(), protocol);
                     ret.put(entry.getKey(), Objects.requireNonNullElse(protocol.changeStatus(StatusCode.CONNECTING), "connected"));
                 } else {
