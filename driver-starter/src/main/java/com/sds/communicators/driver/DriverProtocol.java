@@ -85,7 +85,7 @@ abstract class DriverProtocol {
     protected DriverProtocol create(DriverService driverService, String defaultScript, Device device) throws Exception {
         log.trace("[{}] create", device.getId());
         this.driverService = driverService;
-        this.driverCommand = new DriverCommand(defaultScript);
+        this.driverCommand = new DriverCommand(defaultScript, this);
         this.device = device;
         deviceId = device.getId();
         socketTimeout = device.getSocketTimeout();
@@ -94,7 +94,6 @@ abstract class DriverProtocol {
         if (initialCommandDelay < 100)
             initialCommandDelay = 100;
 
-        driverCommand.setProtocol(this);
         var option = new HashMap<String, String>();
         var connection = device.getConnectionUrl().split("://", 2);
         if (connection.length == 1) {

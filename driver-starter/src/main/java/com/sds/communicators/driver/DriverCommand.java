@@ -30,18 +30,12 @@ class DriverCommand {
     private final Map<Integer, Set<Command>> periodGroupMap = new HashMap<>();
     private DriverProtocol protocol;
 
-    DriverCommand(String defaultScript) {
+    DriverCommand(String defaultScript, DriverProtocol protocol) throws Exception {
         pythonInterpreter.set("log", LoggerFactory.getLogger(ScriptLogger.class));
         pythonInterpreter.exec("from com.sds.communicators.common import UtilFunc");
         pythonInterpreter.exec("import java");
         pythonInterpreter.exec(defaultScript);
-    }
 
-    void dispose() {
-        disposables.clear();
-    }
-
-    void setProtocol(DriverProtocol protocol) throws Exception {
         this.protocol = protocol;
         pythonInterpreter.set("protocol", protocol);
         for (Command command : protocol.device.getCommands()) {
@@ -56,6 +50,10 @@ class DriverCommand {
                     if (period < Command.MINIMUM_PERIOD_GROUP) period = Command.MINIMUM_PERIOD_GROUP;
                     periodGroupMap.compute(period, (k, v) -> v == null ? new HashSet<>() : v).add(cmd);
                 });
+    }
+
+    void dispose() {
+        disposables.clear();
     }
 
     private CommandFunctions compileCommandScript(Command command) throws Exception {
