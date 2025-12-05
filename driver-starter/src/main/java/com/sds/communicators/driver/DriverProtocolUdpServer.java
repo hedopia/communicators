@@ -4,7 +4,6 @@ import com.google.common.base.Strings;
 import com.sds.communicators.common.UtilFunc;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.InternetProtocolFamily;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.Connection;
@@ -53,15 +52,10 @@ public class DriverProtocolUdpServer extends DriverProtocolTcpUdp {
             server = server.host("0.0.0.0");
 
         Enumeration<NetworkInterface> iFaces;
-        if (!multicastGroup.isEmpty()) {
-            if (isIPv4)
-                server = server.runOn(server.configuration().loopResources(), InternetProtocolFamily.IPv4);
-            else
-                server = server.runOn(server.configuration().loopResources(), InternetProtocolFamily.IPv6);
+        if (!multicastGroup.isEmpty())
             iFaces = NetworkInterface.getNetworkInterfaces();
-        } else {
+        else
             iFaces = Collections.enumeration(Collections.emptyList());
-        }
 
         return server
                 .port(port)
