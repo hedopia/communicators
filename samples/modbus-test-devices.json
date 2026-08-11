@@ -1,0 +1,40 @@
+[
+  {
+    "id": "modbus_test_server",
+    "group": "modbus_test",
+    "connectionUrl": "modbus-server://0.0.0.0:15020",
+    "initialCommandDelay": 1000,
+    "data": {
+      "1": { "400001": 11, "400002": 22, "400003": 0 }
+    },
+    "commands": [
+      {
+        "id": "on_request",
+        "type": "READ_REQUEST",
+        "periodGroup": -1,
+        "cmdScript": "def cmdFunc(address, data, unitId, receivedTime):\n    return [('req_' + str(address), str(data))]"
+      }
+    ]
+  },
+  {
+    "id": "modbus_test_client",
+    "group": "modbus_test",
+    "connectionUrl": "modbus-client://127.0.0.1:15020?unitId=1",
+    "initialCommandDelay": 1000,
+    "commands": [
+      {
+        "id": "read_regs",
+        "type": "READ_REQUEST",
+        "periodGroup": 5000,
+        "requestInfo": "{\"address\":40001, \"length\":3}",
+        "cmdScript": "def cmdFunc(received, receivedTime):\n    return [('reg' + str(40001 + i), str(v)) for i, v in enumerate(received)]"
+      },
+      {
+        "id": "write_reg",
+        "type": "WRITE_REQUEST",
+        "periodGroup": -1,
+        "requestInfo": "{\"address\":3, \"values\":[77]}"
+      }
+    ]
+  }
+]

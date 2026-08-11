@@ -1,4 +1,7 @@
 spring:
+  main:
+    web-application-type: none
+    keep-alive: true
   application:
     name: IO-${io.driver-id}
     cloud:

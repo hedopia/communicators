@@ -2,8 +2,7 @@ package com.sds.communicators.driver;
 
 import com.sds.communicators.common.struct.Response;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.PyFunction;
-import org.python.core.PyObject;
+import org.graalvm.polyglot.Value;
 
 import java.util.List;
 import java.util.Map;
@@ -26,7 +25,7 @@ public class DriverProtocolDummy extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) {
         log.trace("dummy protocol request command");
         return null;
     }

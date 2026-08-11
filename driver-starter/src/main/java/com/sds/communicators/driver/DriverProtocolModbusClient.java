@@ -1,20 +1,20 @@
 package com.sds.communicators.driver;
 
-import com.digitalpetri.modbus.master.ModbusTcpMaster;
-import com.digitalpetri.modbus.master.ModbusTcpMasterConfig;
-import com.digitalpetri.modbus.requests.*;
-import com.digitalpetri.modbus.responses.ReadCoilsResponse;
-import com.digitalpetri.modbus.responses.ReadDiscreteInputsResponse;
-import com.digitalpetri.modbus.responses.ReadHoldingRegistersResponse;
-import com.digitalpetri.modbus.responses.ReadInputRegistersResponse;
+import com.digitalpetri.modbus.client.ModbusTcpClient;
+import com.digitalpetri.modbus.pdu.ReadCoilsRequest;
+import com.digitalpetri.modbus.pdu.ReadDiscreteInputsRequest;
+import com.digitalpetri.modbus.pdu.ReadHoldingRegistersRequest;
+import com.digitalpetri.modbus.pdu.ReadInputRegistersRequest;
+import com.digitalpetri.modbus.pdu.WriteMultipleCoilsRequest;
+import com.digitalpetri.modbus.pdu.WriteMultipleRegistersRequest;
+import com.digitalpetri.modbus.pdu.WriteSingleCoilRequest;
+import com.digitalpetri.modbus.pdu.WriteSingleRegisterRequest;
+import com.digitalpetri.modbus.tcp.client.NettyTcpClientTransport;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
-import io.netty.buffer.ByteBuf;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.PyFunction;
-import org.python.core.PyList;
-import org.python.core.PyObject;
+import org.graalvm.polyglot.Value;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class DriverProtocolModbusClient extends DriverProtocol {
-    private ModbusTcpMaster master;
+    private ModbusTcpClient master;
     private final int BATCH_SIZE = 120;
 
     private String host;
@@ -47,23 +47,28 @@ public class DriverProtocolModbusClient extends DriverProtocol {
         if (option.containsKey("combineData"))
             combineData = Boolean.parseBoolean(option.get("combineData"));
 
-        var config = new ModbusTcpMasterConfig.Builder(host).setPort(port).setTimeout(Duration.ofMillis(socketTimeout)).build();
-        master = new ModbusTcpMaster(config);
+        var transport = NettyTcpClientTransport.create(cfg -> {
+            cfg.hostname = host;
+            cfg.port = port;
+            cfg.connectTimeout = Duration.ofMillis(socketTimeout);
+            cfg.connectPersistent = false;
+        });
+        master = ModbusTcpClient.create(transport, cfg -> cfg.setRequestTimeout(Duration.ofMillis(socketTimeout)));
     }
 
     @Override
     void requestConnect() throws Exception {
         log.info("[{}] host={}, port={}, socket-timeout={}", deviceId, host, port, socketTimeout);
-        master.connect().get();
+        master.connect();
     }
 
     @Override
     void requestDisconnect() throws Exception {
-        master.disconnect().get();
+        master.disconnect();
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) throws Exception {
         var object = objectMapper.readValue(requestInfo, Object.class);
         if (isReadCommand) {
             var readAddress = new ArrayList<ModbusRead>();
@@ -87,12 +92,12 @@ public class DriverProtocolModbusClient extends DriverProtocol {
                 var input = new ArrayList<>();
                 for (var result : results)
                     input.addAll(result);
-                return driverCommand.processCommandFunction(new PyList(input), function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+                return driverCommand.processCommandFunction(driverCommand.pythonEngine.toPyList(input), function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
             } else {
-                var input = new ArrayList<PyList>();
+                var input = driverCommand.pythonEngine.newList();
                 for (var result : results)
-                    input.add(new PyList(result));
-                return driverCommand.processCommandFunction(new PyList(input), function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+                    input.invokeMember("append", driverCommand.pythonEngine.toPyList(result));
+                return driverCommand.processCommandFunction(input, function, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
             }
         } else {
             var writeData = new ArrayList<ModbusWrite>();
@@ -144,66 +149,54 @@ public class DriverProtocolModbusClient extends DriverProtocol {
     private List<?> read(int address, int length, int unitId, int timeout, ModbusRead.Type type) throws Exception {
         if (type == ModbusRead.Type.COIL) {
             try {
-                var result = (ReadCoilsResponse)master.sendRequest(new ReadCoilsRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
-                try {
-                    return readBits(result.getCoilStatus(), length);
-                } finally {
-                    result.release();
-                }
+                var result = master.readCoilsAsync(unitId, new ReadCoilsRequest(address, length))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                return readBits(result.coils(), length);
             } catch (Exception e) {
                 throw new Exception("ReadCoilsRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         } else if (type == ModbusRead.Type.DISCRETE_INPUT) {
             try {
-                var result = (ReadDiscreteInputsResponse)master.sendRequest(new ReadDiscreteInputsRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
-                try {
-                    return readBits(result.getInputStatus(), length);
-                } finally {
-                    result.release();
-                }
+                var result = master.readDiscreteInputsAsync(unitId, new ReadDiscreteInputsRequest(address, length))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                return readBits(result.inputs(), length);
             } catch (Exception e) {
                 throw new Exception("ReadDiscreteInputsRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         } else if (type == ModbusRead.Type.INPUT_REGISTER) {
             try {
-                var result = (ReadInputRegistersResponse)master.sendRequest(new ReadInputRegistersRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
-                try {
-                    return readRegister(result.getRegisters());
-                } finally {
-                    result.release();
-                }
+                var result = master.readInputRegistersAsync(unitId, new ReadInputRegistersRequest(address, length))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                return readRegister(result.registers());
             } catch (Exception e) {
                 throw new Exception("ReadInputRegistersRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         } else {
             try {
-                var result = (ReadHoldingRegistersResponse)master.sendRequest(new ReadHoldingRegistersRequest(address, length), unitId).get(timeout, TimeUnit.MILLISECONDS);
-                try {
-                    return readRegister(result.getRegisters());
-                } finally {
-                    result.release();
-                }
+                var result = master.readHoldingRegistersAsync(unitId, new ReadHoldingRegistersRequest(address, length))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                return readRegister(result.registers());
             } catch (Exception e) {
                 throw new Exception("ReadHoldingRegistersRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         }
     }
 
-    static List<Boolean> readBits(ByteBuf registers, int length) {
+    static List<Boolean> readBits(byte[] bits, int length) {
         List<Boolean> ret = new ArrayList<>();
         int bitIndex = 0;
-        while (registers != null && registers.isReadable()) {
-            var val = registers.readByte();
-            for (int i = 0; i < 8 && bitIndex++ < length; i++)
-                ret.add((val & (1 << i)) != 0);
+        for (int i = 0; i < bits.length && bitIndex < length; i++) {
+            var val = bits[i];
+            for (int b = 0; b < 8 && bitIndex++ < length; b++)
+                ret.add((val & (1 << b)) != 0);
         }
         return ret;
     }
 
-    static List<Integer> readRegister(ByteBuf registers) {
+    static List<Integer> readRegister(byte[] registers) {
         var result = new ArrayList<Integer>();
-        while(registers.isReadable())
-            result.add(registers.readUnsignedShort());
+        for (int i = 0; i + 1 < registers.length; i += 2)
+            result.add(((registers[i] & 0xFF) << 8) | (registers[i + 1] & 0xFF));
         return result;
     }
 
@@ -234,7 +227,8 @@ public class DriverProtocolModbusClient extends DriverProtocol {
     private void writeCoil(int address, List<?> data, int unitId, int timeout) throws Exception {
         if (data.size() == 1) {
             try {
-                master.sendRequest(new WriteSingleCoilRequest(address, (Boolean) data.get(0)), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                master.writeSingleCoilAsync(unitId, new WriteSingleCoilRequest(address, (Boolean) data.get(0)))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
                 log.trace("[{}] WriteSingleCoilRequest complete, address={}, unitId={}, data={}", deviceId, address, unitId, data);
             } catch (Exception e) {
                 throw new Exception("WriteSingleCoilRequest failed, address=" + address + ", unitId=" + unitId + ", data=" + data, e);
@@ -245,7 +239,8 @@ public class DriverProtocolModbusClient extends DriverProtocol {
                 for (int i = 0; i < data.size(); i++) {
                     if ((Boolean) data.get(i)) buf[i >> 3] |= 1 << (i & 7);
                 }
-                master.sendRequest(new WriteMultipleCoilsRequest(address, data.size(), buf), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                master.writeMultipleCoilsAsync(unitId, new WriteMultipleCoilsRequest(address, data.size(), buf))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
                 log.trace("[{}] WriteMultipleCoilsRequest complete, address={}, unitId={}, data={}", deviceId, address, unitId, data);
             } catch (Exception e) {
                 throw new Exception("WriteMultipleCoilsRequest failed, address=" + address + ", unitId=" + unitId + ", data=" + data, e);
@@ -256,7 +251,8 @@ public class DriverProtocolModbusClient extends DriverProtocol {
     private void writeRegister(int address, List<?> data, int unitId, int timeout) throws Exception {
         if (data.size() == 1) {
             try {
-                master.sendRequest(new WriteSingleRegisterRequest(address, (Integer) data.get(0)), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                master.writeSingleRegisterAsync(unitId, new WriteSingleRegisterRequest(address, (Integer) data.get(0)))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
                 log.trace("[{}] WriteSingleRegisterRequest complete, address={}, unitId={}, data={}", deviceId, address, unitId, data);
             } catch (Exception e) {
                 throw new Exception("WriteSingleRegisterRequest failed, address=" + address + ", unitId=" + unitId + ", data=" + data, e);
@@ -268,7 +264,8 @@ public class DriverProtocolModbusClient extends DriverProtocol {
                     buf[(i << 1)] = (byte)((Integer) data.get(i) >> 8);
                     buf[(i << 1) + 1] = ((Integer) data.get(i)).byteValue();
                 }
-                master.sendRequest(new WriteMultipleRegistersRequest(address, data.size(), buf), unitId).get(timeout, TimeUnit.MILLISECONDS);
+                master.writeMultipleRegistersAsync(unitId, new WriteMultipleRegistersRequest(address, data.size(), buf))
+                        .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
                 log.trace("[{}] WriteMultipleRegistersRequest complete, address={}, unitId={}, data={}", deviceId, address, unitId, data);
             } catch (Exception e) {
                 throw new Exception("WriteMultipleRegistersRequest failed, address=" + address + ", unitId=" + unitId + ", data=" + data, e);

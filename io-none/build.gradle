@@ -1,0 +1,14 @@
+// io-none/pom.xml 대응 (spring-boot-starter-parent 4.0.0 -> boot 플러그인 + BOM)
+// lombok은 루트에서 compileOnly로 적용되므로 bootJar에 포함되지 않음 (maven exclude와 동등)
+plugins {
+    id 'org.springframework.boot' version '4.1.0'
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.0')
+
+    implementation project(':driver-starter')
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-tomcat'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}

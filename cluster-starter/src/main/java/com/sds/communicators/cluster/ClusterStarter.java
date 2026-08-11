@@ -1,13 +1,16 @@
 package com.sds.communicators.cluster;
 
 import com.sds.communicators.common.type.Position;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.netty.channel.Channel;
 import io.reactivex.rxjava3.functions.Consumer;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.reactive.function.server.RouterFunctions;
 import reactor.core.publisher.Mono;
+import reactor.netty.DisposableServer;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
+import reactor.netty.http.server.HttpServerRoutes;
+import reactor.netty.resources.LoopResources;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,8 +25,18 @@ public class ClusterStarter {
 
     private final RedirectFunction redirectFunction;
     private final ClusterService clusterService;
-    private final ClusterServer clusterServer;
+    private final ClusterServerRoutes clusterServerRoutes;
+    private final ClusterGrpcService clusterGrpcService;
+    private final java.util.function.Consumer<HttpServerRoutes> additionalRoutes;
     private final ClusterClient clusterClient;
+    private final ClusterGrpcClient grpcClient;
+    private final List<io.grpc.ServerServiceDefinition> grpcServices;
+    private final int serverPort;
+    final int grpcPortOffset;
+
+    private DisposableServer server = null;
+    private io.grpc.Server grpcServer = null;
+    private final Set<Channel> serverChannels = ConcurrentHashMap.newKeySet();
 
     final Set<String> nodeTargetUrls = new HashSet<>();
     final String nodeUrl;
@@ -46,10 +59,12 @@ public class ClusterStarter {
         private int leaderLostTimeoutSeconds;
         private int heartbeatSendingIntervalMillis;
         private ClusterEvents clusterEvents;
-        private RouterFunctions.Builder routerFunctionBuilder;
+        private java.util.function.Consumer<HttpServerRoutes> routes;
         private String clusterBasePath;
         private int connectTimeoutMillis;
         private int readTimeoutMillis;
+        private int grpcPortOffset;
+        private List<io.grpc.ServerServiceDefinition> grpcServices;
 
         private Builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
             this.nodeTargetUrls = nodeTargetUrls;
@@ -59,10 +74,12 @@ public class ClusterStarter {
             this.leaderLostTimeoutSeconds = 20;
             this.heartbeatSendingIntervalMillis = 2000;
             this.clusterEvents = null;
-            this.routerFunctionBuilder = null;
+            this.routes = null;
             this.clusterBasePath = "/cluster";
             this.connectTimeoutMillis = 1000;
             this.readTimeoutMillis = 60000;
+            this.grpcPortOffset = 10000;
+            this.grpcServices = null;
         }
 
         public ClusterStarter.Builder setQuorum(int quorum) {
@@ -85,8 +102,8 @@ public class ClusterStarter {
             return this;
         }
 
-        public ClusterStarter.Builder setRouterFunctionBuilder(RouterFunctions.Builder routerFunctionBuilder) {
-            this.routerFunctionBuilder = routerFunctionBuilder;
+        public ClusterStarter.Builder setRoutes(java.util.function.Consumer<HttpServerRoutes> routes) {
+            this.routes = routes;
             return this;
         }
 
@@ -105,6 +122,20 @@ public class ClusterStarter {
             return this;
         }
 
+        public ClusterStarter.Builder setGrpcPortOffset(int grpcPortOffset) {
+            this.grpcPortOffset = grpcPortOffset;
+            return this;
+        }
+
+        /**
+         * additional gRPC services to register on the cluster gRPC server
+         * alongside the cluster internal service
+         */
+        public ClusterStarter.Builder setGrpcServices(List<io.grpc.ServerServiceDefinition> grpcServices) {
+            this.grpcServices = grpcServices;
+            return this;
+        }
+
         public ClusterStarter build() throws Exception {
             return new ClusterStarter(nodeTargetUrls,
                     serverPort,
@@ -113,10 +144,12 @@ public class ClusterStarter {
                     leaderLostTimeoutSeconds,
                     heartbeatSendingIntervalMillis,
                     clusterEvents,
-                    routerFunctionBuilder,
+                    routes,
                     clusterBasePath,
                     connectTimeoutMillis,
-                    readTimeoutMillis);
+                    readTimeoutMillis,
+                    grpcPortOffset,
+                    grpcServices);
         }
     }
 
@@ -127,15 +160,20 @@ public class ClusterStarter {
                            int leaderLostTimeoutSeconds,
                            int heartbeatSendingIntervalMillis,
                            ClusterEvents clusterEvents,
-                           RouterFunctions.Builder routerFunctionBuilder,
+                           java.util.function.Consumer<HttpServerRoutes> routes,
                            String clusterBasePath,
                            int connectTimeoutMillis,
-                           int readTimeoutMillis) throws Exception {
+                           int readTimeoutMillis,
+                           int grpcPortOffset,
+                           List<io.grpc.ServerServiceDefinition> grpcServices) throws Exception {
         clusterClient = new ClusterClient(connectTimeoutMillis, readTimeoutMillis);
+        grpcClient = new ClusterGrpcClient(grpcPortOffset, connectTimeoutMillis, readTimeoutMillis);
+        this.grpcPortOffset = grpcPortOffset;
         this.nodeIndex = nodeIndex;
         this.quorum = quorum;
         this.leaderLostTimeoutSeconds = leaderLostTimeoutSeconds;
         this.heartbeatSendingIntervalMillis = heartbeatSendingIntervalMillis;
+        this.serverPort = serverPort;
 
         Set<Channel> channels = ConcurrentHashMap.newKeySet();
         var server = HttpServer.create()
@@ -144,8 +182,8 @@ public class ClusterStarter {
                     channels.add(c.channel());
                     c.onDispose(() -> channels.remove(c.channel()));
                 })
-                .route(routes ->
-                        routes.get("/index",
+                .route(r ->
+                        r.get("/index",
                                 (request, response) -> response.sendString(Mono.just(Integer.toString(nodeIndex))))
                 )
                 .bindNow();
@@ -169,21 +207,65 @@ public class ClusterStarter {
 
         this.nodeTargetUrls.addAll(nodeTargetUrls.stream().filter(url -> !nodeUrls.contains(url)).collect(Collectors.toSet()));
 
-        redirectFunction = new RedirectFunction(this.nodeTargetUrls, clusterClient, this, clusterBasePath);
-        clusterService = new ClusterService(this, redirectFunction, clusterClient, clusterBasePath);
-        clusterServer = new ClusterServer(serverPort, redirectFunction, this, clusterService, clusterBasePath);
+        redirectFunction = new RedirectFunction(this.nodeTargetUrls, grpcClient, this);
+        clusterService = new ClusterService(this, redirectFunction, grpcClient);
+        clusterServerRoutes = new ClusterServerRoutes(redirectFunction, this, clusterService, clusterBasePath);
+        clusterGrpcService = new ClusterGrpcService(this, clusterService);
         clusterService.clusterEvents.addAll(clusterEvents);
-        clusterServer.addRouterFunctionBuilder(routerFunctionBuilder);
+        this.additionalRoutes = routes;
+        this.grpcServices = grpcServices;
     }
 
-    public RouterFunctions.Builder getRouterFunction() {
-        return clusterServer.routerFunctionBuilder;
+    public java.util.function.Consumer<HttpServerRoutes> getRoutes() {
+        return routes -> {
+            clusterServerRoutes.apply(routes);
+            if (additionalRoutes != null)
+                additionalRoutes.accept(routes);
+        };
+    }
+
+    private void startServer(int serverThreadPoolSize, boolean httpServer) throws Exception {
+        if (server != null)
+            server.disposeNow();
+        if (grpcServer != null)
+            grpcServer.shutdownNow();
+
+        if (httpServer) {
+            server = HttpServer.create()
+                    .port(serverPort)
+                    .runOn(LoopResources.create("http", serverThreadPoolSize, true))
+                    .doOnConnection(c -> {
+                        serverChannels.add(c.channel());
+                        c.onDispose(() -> serverChannels.remove(c.channel()));
+                    })
+                    .route(r -> getRoutes().accept(r))
+                    .bindNow();
+        }
+
+        var grpcServerBuilder = NettyServerBuilder.forPort(serverPort + grpcPortOffset)
+                .maxInboundMessageSize(Integer.MAX_VALUE)
+                .addService(clusterGrpcService.bindService());
+        if (grpcServices != null)
+            for (var service : grpcServices)
+                grpcServerBuilder.addService(service);
+        grpcServer = grpcServerBuilder
+                .build()
+                .start();
+
+        for (String targetUrl : nodeTargetUrls) {
+            try {
+                var index = grpcClient.getNodeIndex(targetUrl);
+                if (nodeIndex == index)
+                    throw new Exception("this node (" + nodeUrl + ") and (" + targetUrl + "), node-index(" + index + ") duplicated");
+            } catch (Exception ignored) {}
+        }
+        log.info("(node-index: {}, url: {}) started", nodeIndex, nodeUrl);
     }
 
     public void startWithoutHttpServer() throws Throwable {
         if (!isStarted) {
             isStarted = true;
-            clusterServer.start(-1, false);
+            startServer(-1, false);
             clusterService.start();
         }
     }
@@ -196,15 +278,31 @@ public class ClusterStarter {
     public void start(int serverThreadPoolSize) throws Throwable {
         if (!isStarted) {
             isStarted = true;
-            clusterServer.start(serverThreadPoolSize, true);
+            startServer(serverThreadPoolSize, true);
             clusterService.start();
         }
     }
 
     public void dispose() {
         clusterService.dispose();
-        clusterServer.dispose();
+        if (server != null) {
+            server.disposeNow();
+            for (Channel channel : serverChannels) {
+                try {
+                    channel.close().get();
+                } catch (Exception ignored) {}
+            }
+            server = null;
+        }
+        if (grpcServer != null) {
+            grpcServer.shutdownNow();
+            try {
+                grpcServer.awaitTermination();
+            } catch (InterruptedException ignored) {}
+            grpcServer = null;
+        }
         clusterClient.dispose();
+        grpcClient.dispose();
         isStarted = false;
         log.info("cluster-starter disposed");
     }
@@ -280,6 +378,14 @@ public class ClusterStarter {
 
     public <U> U getClient(String url, Class<U> api) {
         return clusterClient.getClient(url, api);
+    }
+
+    /**
+     * unary gRPC call to the given node URL, reusing the internal
+     * channel cache and read-timeout deadline
+     */
+    public <Req, Res> Res grpcCall(String nodeUrl, io.grpc.MethodDescriptor<Req, Res> method, Req request) {
+        return grpcClient.call(nodeUrl, method, request);
     }
 
     public Position getPosition(int nodeIndex) throws Throwable {

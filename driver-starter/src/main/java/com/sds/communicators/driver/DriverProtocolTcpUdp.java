@@ -9,9 +9,9 @@ import io.netty.channel.socket.DatagramPacket;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
+import org.graalvm.polyglot.Value;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
-import org.python.core.*;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.netty.DisposableChannel;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 abstract class DriverProtocolTcpUdp extends DriverProtocol {
-    private final BlockingQueue<Triplet<String, PyObject[], Long>> requestedDataQueue = new ArrayBlockingQueue<>(10);
+    private final BlockingQueue<Triplet<String, Value[], Long>> requestedDataQueue = new ArrayBlockingQueue<>(10);
     private String host;
     private int port;
     private Byte[] startBytes = null;
@@ -40,8 +40,8 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
     private int bufferTime;
     private Disposable bufferTimeDisposable = null;
     private Disposable bufferingDisposable = null;
-    private PyFunction protocolFunc = null;
-    private PyFunction bufferingFunc = null;
+    private Value protocolFunc = null;
+    private Value bufferingFunc = null;
 
     protected DisposableChannel channel = null;
     protected final ConcurrentHashMap<NettyOutbound, Socket> bufferingInfo = new ConcurrentHashMap<>();
@@ -57,9 +57,9 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
             try {
                 protocolScript = protocolScript.replaceFirst("def[ \t]+protocolFunc[ \t]*\\(", "def protocolFunc_" + deviceId + "(");
                 protocolScript = protocolScript.replaceFirst("def[ \t]+bufferingFunc[ \t]*\\(", "def bufferingFunc_" + deviceId + "(");
-                driverCommand.pythonInterpreter.exec(protocolScript);
-                protocolFunc = (PyFunction) driverCommand.pythonInterpreter.get("protocolFunc_" + deviceId);
-                bufferingFunc = (PyFunction) driverCommand.pythonInterpreter.get("bufferingFunc_" + deviceId);
+                driverCommand.pythonEngine.exec(protocolScript);
+                protocolFunc = driverCommand.pythonEngine.get("protocolFunc_" + deviceId);
+                bufferingFunc = driverCommand.pythonEngine.get("bufferingFunc_" + deviceId);
             } catch (Exception e) {
                 throw new Exception("compile protocol script failed::" + e.getMessage(), e);
             }
@@ -119,7 +119,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) throws Exception {
         log.trace("[{}] send byte array: {}", deviceId, requestInfo);
         requestedDataQueue.clear();
         NettyOutbound outbound = null;
@@ -164,7 +164,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         if (bufferTime == 0 && bufferingFunc == null && endBytes == null) {
             return flux
                     .doOnNext(pair -> buffering(
-                            new Packet(pair.getValue1(), UtilFunc.arrayWrapper(pair.getValue0()), combineBufferedData), outbound)).then();
+                            new Packet(driverCommand.pythonEngine, pair.getValue1(), UtilFunc.arrayWrapper(pair.getValue0()), combineBufferedData), outbound)).then();
         } else {
             return flux.doOnNext(pair -> buffering(pair, outbound, true)).then();
         }
@@ -181,7 +181,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
             try {
                 var data = UtilFunc.arrayWrapper(pair.getValue0());
                 var sender = pair.getValue1();
-                var packet = socket.senderDataMap.compute(sender, (k, v) -> v == null ? new Packet(k) : v);
+                var packet = socket.senderDataMap.compute(sender, (k, v) -> v == null ? new Packet(driverCommand.pythonEngine, k) : v);
 
                 packet.compositeData.add(data);
                 if (bufferingFunc != null || !combineBufferedData)
@@ -227,9 +227,9 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
 
     private boolean bufferingFunction(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
         try {
-            PyObject funcResult = bufferingFunc.__call__(packet.pyListBuffer);
-            if (funcResult instanceof PyBoolean) {
-                if (((PyBoolean) funcResult).getBooleanValue()) {
+            Value funcResult = bufferingFunc.execute(packet.pyListBuffer);
+            if (funcResult != null && funcResult.isBoolean()) {
+                if (funcResult.asBoolean()) {
                     socket.senderDataMap.remove(packet.sender);
                     buffering(packet, outbound);
                     return true;
@@ -237,16 +237,16 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                     log.trace("[{}] buffering function continue, data: {}", deviceId, UtilFunc.printByteData(data));
                     return false;
                 }
-            } else if (funcResult instanceof PyList) {
-                var list = (PyList) funcResult;
-                var arr = new byte[list.size()];
-                for (int i = 0; i < list.size(); i++)
-                    arr[i] = ((Integer) list.get(i)).byteValue();
+            } else if (PythonEngine.isList(funcResult)) {
+                var size = (int) funcResult.getArraySize();
+                var arr = new byte[size];
+                for (int i = 0; i < size; i++)
+                    arr[i] = (byte) funcResult.getArrayElement(i).asInt();
                 socket.senderDataMap.remove(packet.sender);
                 buffering(packet, outbound);
                 buffering(new Pair<>(arr, socketAddress), outbound, false);
                 return true;
-            } else if (funcResult instanceof PyNone) {
+            } else if (PythonEngine.isNone(funcResult)) {
                 log.trace("[{}] buffering-function return none, clear buffer", deviceId);
             } else {
                 log.error("[{}] buffering-function failed, wrong return type: {}", deviceId, funcResult);
@@ -275,9 +275,9 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 buffering(packet, outbound);
             } else {
                 if (!combineBufferedData) {
-                    var last = (PyList) packet.pyListBuffer.pyget(packet.pyListBuffer.size() - 1);
+                    var last = packet.pyListBuffer.getArrayElement(packet.pyListBuffer.getArraySize() - 1);
                     for (int i = 0; i < arr.length; i++)
-                        last.remove(last.size() - 1);
+                        last.removeArrayElement(last.getArraySize() - 1);
                 }
                 buffering(packet, outbound);
                 buffering(new Pair<>(arr, socketAddress), outbound, false);
@@ -296,12 +296,12 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
                         log.trace("[{}] buffered raw data(combined):" + UtilFunc.printByteData(combinedData), deviceId);
                         var byteDataList = getSubArrays(startBytes, endBytes, combinedData, retainStartEndBytes);
                         for (var byteData : byteDataList) {
-                            var received = new PyList(Arrays.asList(byteData));
-                            packetProcessing(new PyObject[]{received, Py.java2py(packet.sender)}, receivedTime, outbound);
+                            var received = driverCommand.pythonEngine.toPyList(byteData);
+                            packetProcessing(new Value[]{received, driverCommand.pythonEngine.asValue(packet.sender)}, receivedTime, outbound);
                         }
                     } else {
                         log.trace("[{}] buffered raw data:" + packet.compositeData.stream().map(UtilFunc::printByteData).collect(Collectors.joining("")), deviceId);
-                        packetProcessing(new PyObject[]{packet.pyListBuffer, Py.java2py(packet.sender)}, receivedTime, outbound);
+                        packetProcessing(new Value[]{packet.pyListBuffer, driverCommand.pythonEngine.asValue(packet.sender)}, receivedTime, outbound);
                     }
                 } catch (Exception e) {
                     log.error("[{}] packet processing failed:" + packet.compositeData.stream().map(UtilFunc::printByteData).collect(Collectors.joining("")), deviceId, e);
@@ -312,7 +312,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         }
     }
 
-    private void packetProcessing(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
+    private void packetProcessing(Value[] received, long receivedTime, NettyOutbound outbound) throws Exception {
         if (protocolFunc != null) {
             executeProtocolFunc(received, receivedTime, outbound);
         } else {
@@ -322,28 +322,27 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         }
     }
 
-    private void executeProtocolFunc(PyObject[] received, long receivedTime, NettyOutbound outbound) throws Exception {
+    private void executeProtocolFunc(Value[] received, long receivedTime, NettyOutbound outbound) throws Exception {
         var arg = driverCommand.getArguments(protocolFunc, received, receivedTime, null);
-        PyObject result;
+        Value result;
         try {
-            result = protocolFunc.__call__(arg);
+            result = protocolFunc.execute(arg);
         } catch (Exception e) {
             throw new DriverCommand.ScriptException("protocol-function failed", e);
         }
-        if (result instanceof PyNone) { // for anonymous read-command response
+        if (PythonEngine.isNone(result)) { // for anonymous read-command response
             requestedDataQueue.clear();
             requestedDataQueue.put(new Triplet<>(null, received, receivedTime));
-        } else if (result instanceof PyString) { // for read-command response
+        } else if (PythonEngine.isString(result)) { // for read-command response
             requestedDataQueue.clear();
             requestedDataQueue.put(new Triplet<>(result.asString(), received, receivedTime));
-        } else if (result instanceof PyList) {
-            var list = new ArrayList<Object>((PyList) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
-        } else if (result instanceof PyTuple) {
-            var list = new ArrayList<Object>((PyTuple) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, outbound);
+        } else if (PythonEngine.isList(result) || PythonEngine.isTuple(result)) {
+            var list = new ArrayList<String>();
+            for (long i = 0; i < result.getArraySize(); i++)
+                list.add(PythonEngine.asString(result.getArrayElement(i)));
+            driverCommand.executeNonPeriodicCommands(list, received, receivedTime, outbound);
         } else {
-            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), Arrays.asList(received));
+            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, PythonEngine.typeName(result), Arrays.asList(received));
         }
     }
 
@@ -402,7 +401,8 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         final LinkedList<Byte[]> compositeData = new LinkedList<>();
         boolean isFirstPacket = true;
         InetSocketAddress sender;
-        final PyList pyListBuffer = new PyList();
+        private final PythonEngine pythonEngine;
+        final Value pyListBuffer;
         Byte[] combinedBuffer = new Byte[0];
         private Byte[] buf = new Byte[32];
         private int count = 0;
@@ -410,12 +410,14 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
 
         private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 
-        Packet(InetSocketAddress sender) {
+        Packet(PythonEngine pythonEngine, InetSocketAddress sender) {
+            this.pythonEngine = pythonEngine;
+            this.pyListBuffer = pythonEngine.newList();
             this.sender = sender;
         }
 
-        Packet(InetSocketAddress sender, Byte[] data, boolean combineBufferedData) {
-            this(sender);
+        Packet(PythonEngine pythonEngine, InetSocketAddress sender, Byte[] data, boolean combineBufferedData) {
+            this(pythonEngine, sender);
             compositeData.add(data);
             if (combineBufferedData)
                 writeBuffer(data);
@@ -424,7 +426,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
         }
 
         void addPyList(Byte[] data) {
-            pyListBuffer.add(new PyList(Arrays.asList(data)));
+            pyListBuffer.invokeMember("append", pythonEngine.toPyList(data));
         }
 
         void writeBuffer(Byte[] b) {

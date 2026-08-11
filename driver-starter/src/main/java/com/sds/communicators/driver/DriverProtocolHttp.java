@@ -5,7 +5,7 @@ import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.*;
+import org.graalvm.polyglot.Value;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManagerFactory;
@@ -70,19 +70,23 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         useByteArrayBody = Boolean.parseBoolean(option.get("useByteArrayBody"));
     }
 
-    protected PyDictionary getPyHeaders(HttpHeaders headers) {
-        var pyHeaders = new PyDictionary();
+    protected Value getPyHeaders(HttpHeaders headers) {
+        var headerMap = new HashMap<String, List<String>>();
         headers.forEach(entry ->
-                ((PyList) pyHeaders.compute(entry.getKey(), (k, v) -> v == null ? new PyList() : v))
-                        .add(new PyUnicode(entry.getValue())));
+                headerMap.compute(entry.getKey(), (k, v) -> v == null ? new ArrayList<>() : v)
+                        .add(entry.getValue()));
+        var pyHeaders = driverCommand.pythonEngine.newDict();
+        headerMap.forEach((k, v) -> pyHeaders.putHashEntry(k, driverCommand.pythonEngine.toPyList(v)));
         return pyHeaders;
     }
 
-    protected void setHeaders(PyObject[] headers, StringBuilder sb) {
+    protected void setHeaders(Value[] headers, StringBuilder sb) {
         var headerMap = new HashMap<String, List<String>>();
-        for (int i = 0; i < headers.length - 1; i += 2)
-            headerMap.compute(headers[i].toString(), (k,v) -> v == null ? new ArrayList<>() : v)
-                    .add(headers[i + 1].toString());
+        for (int i = 0; i < headers.length - 1; i += 2) {
+            var key = PythonEngine.asString(headers[i]);
+            var value = PythonEngine.asString(headers[i + 1]);
+            headerMap.compute(key, (k, v) -> v == null ? new ArrayList<>() : v).add(value);
+        }
         if (!headerMap.isEmpty()) {
             sb.append("\"headers\":");
             try {
@@ -92,16 +96,17 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         }
     }
 
-    protected String makeBody(PyObject body) {
+    protected String makeBody(Value body) {
         String ret = "\"\"";
-        if (body instanceof PyString) {
+        if (PythonEngine.isString(body)) {
             try {
-                ret = objectMapper.writeValueAsString(body.toString());
+                ret = objectMapper.writeValueAsString(body.asString());
             } catch (JsonProcessingException ignored) {
             }
         } else {
             try {
-                ret = "\"" + objectMapper.writeValueAsString(body) + "\"";
+                Object javaBody = body.hasArrayElements() ? body.as(List.class) : body.toString();
+                ret = "\"" + objectMapper.writeValueAsString(javaBody) + "\"";
             } catch (JsonProcessingException e) {
                 ret = "\"" + body.toString() + "\"";
             }

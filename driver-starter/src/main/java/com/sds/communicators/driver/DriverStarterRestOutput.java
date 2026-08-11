@@ -7,10 +7,11 @@ import com.sds.communicators.common.struct.Status;
 import feign.Param;
 import feign.RequestLine;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.reactive.function.server.RouterFunctions;
+import reactor.netty.http.server.HttpServerRoutes;
 
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 @Slf4j
 public class DriverStarterRestOutput extends DriverStarter {
@@ -55,7 +56,7 @@ public class DriverStarterRestOutput extends DriverStarter {
                     driverEvents,
                     driverBasePath,
                     clusterEvents,
-                    routerFunctionBuilder,
+                    routes,
                     clusterStarterBuilder);
         }
     }
@@ -71,7 +72,7 @@ public class DriverStarterRestOutput extends DriverStarter {
                                    DriverEvents driverEvents,
                                    String driverBasePath,
                                    ClusterEvents clusterEvents,
-                                   RouterFunctions.Builder routerFunctionBuilder,
+                                   Consumer<HttpServerRoutes> routes,
                                    ClusterStarter.Builder clusterStarterBuilder) throws Exception {
         super(driverId,
                 loadBalancing,
@@ -79,7 +80,7 @@ public class DriverStarterRestOutput extends DriverStarter {
                 driverEvents,
                 driverBasePath,
                 clusterEvents,
-                routerFunctionBuilder,
+                routes,
                 clusterStarterBuilder);
 
         this.restOutputTargetUrls = restOutputTargetUrls;

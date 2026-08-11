@@ -1,0 +1,15 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'communicators'
+
+include 'common'
+include 'cluster-starter'
+include 'driver-starter'
+include 'io-db'
+include 'io-kafka'
+include 'io-none'

@@ -1,0 +1,4 @@
+// common/pom.xml 대응 (lombok은 루트 build.gradle에서 공통 적용)
+dependencies {
+    api 'io.reactivex.rxjava3:rxjava:3.1.12'
+}

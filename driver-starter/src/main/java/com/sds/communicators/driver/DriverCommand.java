@@ -8,11 +8,9 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.*;
-import org.python.util.PythonInterpreter;
+import org.graalvm.polyglot.Value;
 import org.slf4j.LoggerFactory;
 
-import java.math.BigInteger;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -23,7 +21,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 class DriverCommand {
-    final PythonInterpreter pythonInterpreter = new PythonInterpreter();
+    final PythonEngine pythonEngine = new PythonEngine();
     private final ReentrantLock lock = new ReentrantLock(true);
     private final Map<String, CommandFunctions> functionMap = new HashMap<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
@@ -31,13 +29,13 @@ class DriverCommand {
     private DriverProtocol protocol;
 
     DriverCommand(String defaultScript, DriverProtocol protocol) throws Exception {
-        pythonInterpreter.set("log", LoggerFactory.getLogger(ScriptLogger.class));
-        pythonInterpreter.exec("from com.sds.communicators.common import UtilFunc");
-        pythonInterpreter.exec("import java");
-        pythonInterpreter.exec(defaultScript);
+        pythonEngine.set("log", LoggerFactory.getLogger(ScriptLogger.class));
+        pythonEngine.exec("from com.sds.communicators.common import UtilFunc");
+        pythonEngine.exec("import java");
+        pythonEngine.exec(defaultScript);
 
         this.protocol = protocol;
-        pythonInterpreter.set("protocol", protocol);
+        pythonEngine.set("protocol", protocol);
         for (Command command : protocol.device.getCommands()) {
             log.trace("[{}] cmdId={}, initialize command script", protocol.deviceId, command.getId());
             functionMap.put(command.getId(), compileCommandScript(command));
@@ -56,6 +54,19 @@ class DriverCommand {
         disposables.clear();
     }
 
+    Value stringToPyObject(String s) {
+        return pythonEngine.stringToPyObject(s);
+    }
+
+    private Value getFunction(String name) throws Exception {
+        var function = pythonEngine.get(name);
+        if (function == null || function.isNull())
+            return null;
+        if (!PythonEngine.isFunction(function))
+            throw new Exception("\"" + name + "\" is not a function");
+        return function;
+    }
+
     private CommandFunctions compileCommandScript(Command command) throws Exception {
         if (!command.getId().matches("^[a-zA-Z0-9_]+$"))
             throw new Exception("cmdId=" + command.getId() + ", invalid command-id");
@@ -70,11 +81,11 @@ class DriverCommand {
                 script = script.replaceFirst("def[ \t]+requestInfo[ \t]*\\(", "def requestInfo_" + command.getId() + "(");
                 script = script.replaceFirst("def[ \t]+delay[ \t]*\\(", "def delay_" + command.getId() + "(");
                 script = script.replaceFirst("def[ \t]+control[ \t]*\\(", "def control_" + command.getId() + "(");
-                pythonInterpreter.exec(script);
-                var cmd = (PyFunction)pythonInterpreter.get("cmdFunc_" + command.getId());
-                var req = (PyFunction)pythonInterpreter.get("requestInfo_" + command.getId());
-                var delay = (PyFunction)pythonInterpreter.get("delay_" + command.getId());
-                var control = (PyFunction)pythonInterpreter.get("control_" + command.getId());
+                pythonEngine.exec(script);
+                var cmd = getFunction("cmdFunc_" + command.getId());
+                var req = getFunction("requestInfo_" + command.getId());
+                var delay = getFunction("delay_" + command.getId());
+                var control = getFunction("control_" + command.getId());
 
                 ret = new CommandFunctions(command, cmd, req, delay, control);
             }
@@ -91,9 +102,9 @@ class DriverCommand {
             throw new Exception("cmdId=" + command.getId() + ", " + command.getType() + " has no \"cmdFunc\"");
 
         if (ret.controlFunction != null) {
-            var argCnt = ((PyTableCode)ret.controlFunction.__code__).co_argcount;
+            var argCnt = PythonEngine.getArgumentCount(ret.controlFunction);
             if (argCnt != 2 && argCnt != 3)
-                throw new Exception("cmdId=" + command.getId() + ", control arguments count must be 2 or 3 >> control(commandList, idx, exception), arguments count: " + ((PyTableCode)ret.commandFunction.__code__).co_argcount);
+                throw new Exception("cmdId=" + command.getId() + ", control arguments count must be 2 or 3 >> control(commandList, idx, exception), arguments count: " + argCnt);
         }
 
         return ret;
@@ -157,14 +168,14 @@ class DriverCommand {
         if (!stoppingCmd.isEmpty()) {
             log.debug("[{}] execute stopping command", protocol.deviceId);
             try {
-                lockedExecuteCommands(stoppingCmd, null, true);
+                lockedExecuteCommands(stoppingCmd, (Value) null, true);
             } catch (Exception e) {
                 log.error("[{}] error on executing stopping request commands", protocol.deviceId, e);
             }
         }
     }
 
-    void executeNonPeriodicCommands(PyObject[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
+    void executeNonPeriodicCommands(Value[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
         try {
             lock.lockInterruptibly();
             try {
@@ -180,7 +191,7 @@ class DriverCommand {
         }
     }
 
-    void executeNonPeriodicCommands(List<String> commandIdList, PyObject[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
+    void executeNonPeriodicCommands(List<String> commandIdList, Value[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
         try {
             lock.lockInterruptibly();
             try {
@@ -201,7 +212,11 @@ class DriverCommand {
         }
     }
 
-    List<Response> lockedExecuteCommands(List<String> commandIdList, PyObject initialValue, boolean isResponseOutput) throws Exception {
+    List<Response> lockedExecuteCommands(List<String> commandIdList, String initialValue, boolean isResponseOutput) throws Exception {
+        return lockedExecuteCommands(commandIdList, stringToPyObject(initialValue), isResponseOutput);
+    }
+
+    List<Response> lockedExecuteCommands(List<String> commandIdList, Value initialValue, boolean isResponseOutput) throws Exception {
         lock.lockInterruptibly();
         try {
             List<CommandFunctions> functionList = new ArrayList<>();
@@ -217,7 +232,11 @@ class DriverCommand {
         }
     }
 
-    List<Response> lockedExecuteCommands(Set<Command> commands, PyObject initialValue, boolean isResponseOutput) throws Exception {
+    List<Response> lockedExecuteCommands(Set<Command> commands, String initialValue, boolean isResponseOutput) throws Exception {
+        return lockedExecuteCommands(commands, stringToPyObject(initialValue), isResponseOutput);
+    }
+
+    List<Response> lockedExecuteCommands(Set<Command> commands, Value initialValue, boolean isResponseOutput) throws Exception {
         lock.lockInterruptibly();
         try {
             return executeCommands(commands, isResponseOutput, null, null, initialValue, null);
@@ -226,11 +245,11 @@ class DriverCommand {
         }
     }
 
-    private void executeCommands(Set<Command> commands, PyObject[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
+    private void executeCommands(Set<Command> commands, Value[] received, Long receivedTime, Object nonPeriodicObject) throws Exception {
         executeCommands(commands, true, received, receivedTime, null, nonPeriodicObject);
     }
 
-    private List<Response> executeCommands(Set<Command> commands, boolean isResponseOutput, PyObject[] received, Long receivedTime, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    private List<Response> executeCommands(Set<Command> commands, boolean isResponseOutput, Value[] received, Long receivedTime, Value initialValue, Object nonPeriodicObject) throws Exception {
         List<CommandFunctions> functionList = new ArrayList<>();
         for (var command : commands)
             functionList.add(functionMap.containsKey(command.getId()) ? functionMap.get(command.getId()) : compileCommandScript(command));
@@ -240,10 +259,10 @@ class DriverCommand {
         return executeCommands(functionList, isResponseOutput, received, receivedTime, initialValue, nonPeriodicObject);
     }
 
-    private List<Response> executeCommands(List<CommandFunctions> functionList, boolean isResponseOutput, PyObject[] received, Long receivedTime, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    private List<Response> executeCommands(List<CommandFunctions> functionList, boolean isResponseOutput, Value[] received, Long receivedTime, Value initialValue, Object nonPeriodicObject) throws Exception {
         var ret = new ArrayList<Response>();
-        var commandList = new PyList(functionList.stream()
-                .map(function -> new PyString(function.command.getId()))
+        var commandList = pythonEngine.toPyList(functionList.stream()
+                .map(function -> function.command.getId())
                 .collect(Collectors.toList()));
 
         for (int i = 0; i < functionList.size(); ) {
@@ -261,19 +280,19 @@ class DriverCommand {
                 }
 
                 if (function.delayFunction != null) {
-                    PyObject delay;
+                    Value delay;
                     try {
-                        delay = function.delayFunction.__call__();
+                        delay = function.delayFunction.execute();
                     } catch (Exception e) {
                         throw new ScriptException("delay-function failed", e);
                     }
 
-                    if (delay instanceof PyInteger)
-                        Thread.sleep(delay.asInt());
-                    else if (delay instanceof PyNone)
+                    if (PythonEngine.isInteger(delay))
+                        Thread.sleep(PythonEngine.asInt(delay));
+                    else if (PythonEngine.isNone(delay))
                         Thread.sleep(function.command.getAfterDelay());
                     else
-                        throw new ScriptException(String.format("delay function output type is %s, output=%s", delay.getType().getName(), delay));
+                        throw new ScriptException(String.format("delay function output type is %s, output=%s", PythonEngine.typeName(delay), delay));
                 } else {
                     Thread.sleep(function.command.getAfterDelay());
                 }
@@ -285,30 +304,31 @@ class DriverCommand {
 
             try {
                 if (function.controlFunction != null) {
-                    PyObject control;
+                    Value control;
                     try {
-                        var argCnt = ((PyTableCode)function.controlFunction.__code__).co_argcount;
+                        var argCnt = PythonEngine.getArgumentCount(function.controlFunction);
                         if (argCnt == 2)
-                            control = function.controlFunction.__call__(commandList, new PyInteger(i));
+                            control = function.controlFunction.execute(commandList, i);
                         else
-                            control = function.controlFunction.__call__(commandList, new PyInteger(i), Py.java2py(ex));
+                            control = function.controlFunction.execute(commandList, i, pythonEngine.asValue(ex));
                     } catch (Exception e) {
                         throw new ScriptException("control-function failed", e);
                     }
-                    if (control instanceof PyInteger) {
-                        var idx = control.asInt();
+                    if (PythonEngine.isInteger(control)) {
+                        var idx = PythonEngine.asInt(control);
+                        int size = (int) commandList.getArraySize();
                         if (idx < 0)
-                            i = Math.max(commandList.size() - idx, 0);
+                            i = Math.max(size - idx, 0);
                         else
-                            i = Math.min(idx, commandList.size());
-                    } else if (control instanceof PyNone) {
+                            i = Math.min(idx, size);
+                    } else if (PythonEngine.isNone(control)) {
                         i++;
-                    } else if (Py.isInstance(control, Py.java2py(Throwable.class))) {
-                        throw (Throwable) control.__tojava__(control.getType().getProxyType());
-                    } else if (control instanceof PyBaseException) {
+                    } else if (control.isHostObject() && control.asHostObject() instanceof Throwable) {
+                        throw (Throwable) control.asHostObject();
+                    } else if (control.isException()) {
                         throw new ScriptException(control.toString());
                     } else {
-                        throw new ScriptException(String.format("control function output type is %s, output=%s", control.getType().getName(), control));
+                        throw new ScriptException(String.format("control function output type is %s, output=%s", PythonEngine.typeName(control), control));
                     }
                 } else {
                     if (ex != null)
@@ -331,26 +351,26 @@ class DriverCommand {
      * @param command command
      * @return response list
      */
-    private List<Response> getCommandResponse(Command command, CommandFunctions cmdFunctions, PyObject[] received, Long receivedTime, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    private List<Response> getCommandResponse(Command command, CommandFunctions cmdFunctions, Value[] received, Long receivedTime, Value initialValue, Object nonPeriodicObject) throws Exception {
         if (received != null && receivedTime != null && command.getType() == CommandType.READ_REQUEST)
             return processCommandFunction(received, cmdFunctions.commandFunction, receivedTime, initialValue);
 
         if (isRequest(command.getType()))
-            return processCommandFunction((PyObject[]) null, cmdFunctions.commandFunction, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
+            return processCommandFunction((Value[]) null, cmdFunctions.commandFunction, ZonedDateTime.now().toInstant().toEpochMilli(), initialValue);
 
         String requestInfo = command.getRequestInfo();
         var requestInfoFunc = cmdFunctions.requestInfoFunction;
         if (requestInfoFunc != null) {
-            PyObject result;
+            Value result;
             try {
-                result = requestInfoFunc.__call__(getArguments(requestInfoFunc, received, receivedTime, initialValue));
+                result = requestInfoFunc.execute(getArguments(requestInfoFunc, received, receivedTime, initialValue));
             } catch (Exception e) {
                 throw new ScriptException("request-info failed", e);
             }
-            if (result instanceof PyString) {
+            if (PythonEngine.isString(result)) {
                 log.trace("[{}] cmdId={}, set request-info as \"{}\"", protocol.deviceId, command.getId(), result.asString());
                 requestInfo = result.asString();
-            } else if (result instanceof PyNone) {
+            } else if (PythonEngine.isNone(result)) {
                 if (Strings.isNullOrEmpty(command.getRequestInfo())) {
                     log.trace("[{}] cmdId={}, request function result is null", protocol.deviceId, command.getId());
                     return null;
@@ -358,7 +378,7 @@ class DriverCommand {
                     log.trace("[{}] cmdId={}, request-info function result is null -> use \"{}\"", protocol.deviceId, command.getId(), requestInfo);
                 }
             } else {
-                throw new ScriptException(String.format("request-info output type is %s, output=%s", result.getType().getName(), result));
+                throw new ScriptException(String.format("request-info output type is %s, output=%s", PythonEngine.typeName(result), result));
             }
         } else if (Strings.isNullOrEmpty(requestInfo)) {
             throw new ScriptException("cmdId=" + command.getId() + ", request-info is not defined");
@@ -376,59 +396,67 @@ class DriverCommand {
         }
     }
 
-    List<Response> processCommandFunction(PyObject input, PyFunction cmdFunc, long receivedTime, PyObject initialValue) throws Exception {
-        return processCommandFunction(new PyObject[]{input}, cmdFunc, receivedTime, initialValue);
+    List<Response> processCommandFunction(Value input, Value cmdFunc, long receivedTime, Value initialValue) throws Exception {
+        return processCommandFunction(new Value[]{input}, cmdFunc, receivedTime, initialValue);
     }
 
-    List<Response> processCommandFunction(PyObject[] input, PyFunction cmdFunc, long receivedTime, PyObject initialValue) throws Exception {
-        PyObject output;
+    List<Response> processCommandFunction(Value[] input, Value cmdFunc, long receivedTime, Value initialValue) throws Exception {
+        Value output;
         try {
-            output = cmdFunc.__call__(getArguments(cmdFunc, input, receivedTime, initialValue));
+            output = cmdFunc.execute(getArguments(cmdFunc, input, receivedTime, initialValue));
         } catch (Exception e) {
             throw new ScriptException("command-function failed", e);
         }
 
         var ret = new ArrayList<Response>();
-        if (output instanceof PyList) {
-            var list = (PyList)output;
-            for (Object o : list) {
-                if (o instanceof PyTuple) {
-                    var tuple = (PyTuple)o;
-                    if (tuple.size() == 2 || tuple.size() == 3) {
-                        if (tuple.size() == 3 && !(tuple.get(2) instanceof Long) && !(tuple.get(2) instanceof BigInteger))
-                            throw new ScriptException(String.format("output parsing failed (wrong received-time format), tag-value=%s", tuple));
-                        var rTime = tuple.size() == 2 ? receivedTime : (tuple.get(2) instanceof BigInteger ? ((BigInteger) tuple.get(2)).longValue() : (Long) tuple.get(2));
-                        ret.add(new Response(protocol.deviceId, tuple.get(0).toString(), tuple.get(1).toString(), rTime));
+        if (PythonEngine.isList(output)) {
+            for (long idx = 0; idx < output.getArraySize(); idx++) {
+                var o = output.getArrayElement(idx);
+                if (PythonEngine.isTuple(o)) {
+                    var size = o.getArraySize();
+                    if (size == 2 || size == 3) {
+                        Long rTime;
+                        if (size == 3) {
+                            var timeValue = o.getArrayElement(2);
+                            if (timeValue == null || timeValue.isNull() || !timeValue.isNumber() || !timeValue.fitsInLong())
+                                throw new ScriptException(String.format("output parsing failed (wrong received-time format), tag-value=%s", o));
+                            rTime = timeValue.asLong();
+                        } else {
+                            rTime = receivedTime;
+                        }
+                        var tag = PythonEngine.asString(o.getArrayElement(0));
+                        var value = PythonEngine.asString(o.getArrayElement(1));
+                        ret.add(new Response(protocol.deviceId, tag, value, rTime));
                         var time = ZonedDateTime.ofInstant(Instant.ofEpochMilli(rTime), ZoneId.systemDefault());
-                        log.debug("[{}] tag: {}, value: {}, time: {}", protocol.deviceId, tuple.get(0), tuple.get(1), time);
+                        log.debug("[{}] tag: {}, value: {}, time: {}", protocol.deviceId, tag, value, time);
                     } else {
-                        throw new ScriptException(String.format("output parsing failed (wrong tuple size), tag-value=%s, size=%d", tuple, tuple.size()));
+                        throw new ScriptException(String.format("output parsing failed (wrong tuple size), tag-value=%s, size=%d", o, size));
                     }
                 } else {
-                    throw new ScriptException(String.format("output parsing failed (type is not PyTuple), tag-value=%s, type=%s", o.toString(), o.getClass()));
+                    throw new ScriptException(String.format("output parsing failed (type is not tuple), tag-value=%s, type=%s", o, PythonEngine.typeName(o)));
                 }
             }
-        } else if (output instanceof PyNone) {
+        } else if (PythonEngine.isNone(output)) {
             return null;
         } else {
-            throw new ScriptException(String.format("command function output type is %s, output=%s", output.getType().getName(), output));
+            throw new ScriptException(String.format("command function output type is %s, output=%s", PythonEngine.typeName(output), output));
         }
         if (ret.isEmpty())
             return null;
         return ret;
     }
 
-    PyObject[] getArguments(PyFunction function, PyObject[] input, Long receivedTime, PyObject initialValue) throws Exception {
+    Object[] getArguments(Value function, Value[] input, Long receivedTime, Value initialValue) throws Exception {
         int inputCount = input == null ? 0 : input.length;
         if (receivedTime != null)
             inputCount++;
         if (initialValue != null)
             inputCount++;
-        int funcArgCount = ((PyTableCode)function.__code__).co_argcount;
+        int funcArgCount = PythonEngine.getArgumentCount(function);
         if (funcArgCount > inputCount)
             throw new Exception("invalid function, function arguments count: " + funcArgCount + ", possible input arguments count: " + inputCount);
 
-        var arg = new PyObject[funcArgCount];
+        var arg = new Object[funcArgCount];
         if (funcArgCount > 0) {
             int offset = 0;
             if (initialValue != null) {
@@ -438,7 +466,7 @@ class DriverCommand {
             if (input != null)
                 System.arraycopy(input, 0, arg, offset, Math.min(input.length, funcArgCount - offset));
             if (receivedTime != null && funcArgCount == inputCount)
-                arg[funcArgCount - 1] = new PyLong(receivedTime);
+                arg[funcArgCount - 1] = receivedTime;
         }
         return arg;
     }
@@ -465,11 +493,11 @@ class DriverCommand {
 
     private static class CommandFunctions {
         Command command;
-        PyFunction commandFunction;
-        PyFunction requestInfoFunction;
-        PyFunction delayFunction;
-        PyFunction controlFunction;
-        CommandFunctions(Command command, PyFunction commandFunction, PyFunction requestInfoFunction, PyFunction delayFunction, PyFunction controlFunction) {
+        Value commandFunction;
+        Value requestInfoFunction;
+        Value delayFunction;
+        Value controlFunction;
+        CommandFunctions(Command command, Value commandFunction, Value requestInfoFunction, Value delayFunction, Value controlFunction) {
             this.command = command;
             this.commandFunction = commandFunction;
             this.requestInfoFunction = requestInfoFunction;

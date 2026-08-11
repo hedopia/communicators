@@ -7,12 +7,13 @@ import com.sds.communicators.common.struct.Status;
 import com.sds.communicators.driver.DriverEvents;
 import com.sds.communicators.driver.DriverStarter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.reactive.function.server.RouterFunctions;
+import reactor.netty.http.server.HttpServerRoutes;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.function.Consumer;
 
 @Slf4j
 public class DriverStarterDBOutput extends DriverStarter {
@@ -36,7 +37,7 @@ public class DriverStarterDBOutput extends DriverStarter {
                     driverEvents,
                     driverBasePath,
                     clusterEvents,
-                    routerFunctionBuilder,
+                    routes,
                     clusterStarterBuilder);
         }
     }
@@ -47,7 +48,7 @@ public class DriverStarterDBOutput extends DriverStarter {
                                     DriverEvents driverEvents,
                                     String driverBasePath,
                                     ClusterEvents clusterEvents,
-                                    RouterFunctions.Builder routerFunctionBuilder,
+                                    Consumer<HttpServerRoutes> routes,
                                     ClusterStarter.Builder clusterStarterBuilder) throws Exception {
         super(driverId,
                 loadBalancing,
@@ -55,7 +56,7 @@ public class DriverStarterDBOutput extends DriverStarter {
                 driverEvents,
                 driverBasePath,
                 clusterEvents,
-                routerFunctionBuilder,
+                routes,
                 clusterStarterBuilder);
     }
 

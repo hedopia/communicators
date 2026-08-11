@@ -7,13 +7,14 @@ import com.sds.communicators.common.struct.Status;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
-import org.springframework.web.reactive.function.server.RouterFunctions;
+import reactor.netty.http.server.HttpServerRoutes;
 
 import java.io.FileWriter;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.function.Consumer;
 
 @Slf4j
 public class DriverStarterFileOutput extends DriverStarter {
@@ -46,7 +47,7 @@ public class DriverStarterFileOutput extends DriverStarter {
                     driverEvents,
                     driverBasePath,
                     clusterEvents,
-                    routerFunctionBuilder,
+                    routes,
                     clusterStarterBuilder);
         }
     }
@@ -59,7 +60,7 @@ public class DriverStarterFileOutput extends DriverStarter {
                                    DriverEvents driverEvents,
                                    String driverBasePath,
                                    ClusterEvents clusterEvents,
-                                   RouterFunctions.Builder routerFunctionBuilder,
+                                   Consumer<HttpServerRoutes> routes,
                                    ClusterStarter.Builder clusterStarterBuilder) throws Exception {
         super(driverId,
                 loadBalancing,
@@ -67,7 +68,7 @@ public class DriverStarterFileOutput extends DriverStarter {
                 driverEvents,
                 driverBasePath,
                 clusterEvents,
-                routerFunctionBuilder,
+                routes,
                 clusterStarterBuilder);
 
         this.responseFile = responseFile;

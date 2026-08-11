@@ -6,9 +6,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.DependsOn;
-import org.springframework.web.reactive.function.server.RouterFunction;
-import org.springframework.web.reactive.function.server.ServerResponse;
 
 import java.util.Set;
 
@@ -33,7 +30,7 @@ public class IoConfiguration {
     private DriverStarter driverStarter = null;
 
     @Bean
-    public DriverStarter driverStarter() throws Exception {
+    public DriverStarter driverStarter() throws Throwable {
         driverStarter = DriverStarterDBOutput.builder(
                 driverId,
                 ClusterStarter.builder(
@@ -49,13 +46,7 @@ public class IoConfiguration {
                 .setLoadBalancing(loadBalancing)
                 .setDriverBasePath(driverBasePath)
                 .build();
+        driverStarter.start();
         return driverStarter;
-    }
-
-    @Bean
-    @DependsOn("driverStarter")
-    public RouterFunction<ServerResponse> routerFunction() throws Throwable {
-        driverStarter.startWithoutHttpServer();
-        return driverStarter.getRouterFunction().build();
     }
 }

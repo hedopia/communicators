@@ -4,8 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.io.CharStreams;
 import com.sds.communicators.common.LoadBalancer;
-import com.sds.communicators.common.type.NodeStatus;
-import com.sds.communicators.common.type.Position;
 import feign.*;
 import feign.codec.EncodeException;
 import io.reactivex.rxjava3.functions.Consumer;
@@ -60,59 +58,8 @@ class ClusterClient {
                 .compute(api, (k, v) -> v == null ? builder.target(k, url) : v);
     }
 
-    ClusterClientApi getClient(String url) {
-        return getClient(url, ClusterClientApi.class);
-    }
-
     void dispose() {
         for (var lb : loadBalancerMap.values())
             lb.clear();
-    }
-
-    interface ClusterClientApi {
-        @RequestLine("PUT {clusterBasePath}/heartbeat/{nodeIndex}/{position}/{lastTransitionTime}")
-        void heartbeat(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, @Param("position") Position position, @Param("lastTransitionTime") long lastTransitionTime, Map<Integer, Long> sharedObjectSeq);
-
-        @RequestLine("GET {clusterBasePath}/node-status")
-        NodeStatus getNodeStatus(@Param("clusterBasePath") String clusterBasePath);
-
-        @RequestLine("PUT {clusterBasePath}/set-to-leader")
-        void setToLeader(@Param("clusterBasePath") String clusterBasePath);
-
-        @RequestLine("DELETE {clusterBasePath}/cluster-deleted/{nodeIndex}")
-        void clusterDeleted(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex);
-
-        @RequestLine("DELETE {clusterBasePath}/remove-shared-object/{nodeIndex}")
-        void removeSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex);
-
-        @RequestLine("GET {clusterBasePath}/get-node-index")
-        int getNodeIndex(@Param("clusterBasePath") String clusterBasePath);
-
-        @RequestLine("POST {clusterBasePath}/merge-shared-object-to-leader/{nodeIndex}")
-        void mergeSharedObjectToLeader(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.MergeSharedObjectInfo mergeSharedObjectInfo);
-
-        @RequestLine("POST {clusterBasePath}/delete-shared-object-to-leader/{nodeIndex}")
-        void deleteSharedObjectToLeader(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.DeleteSharedObjectInfo deleteSharedObjectInfo);
-
-        @RequestLine("POST {clusterBasePath}/overwrite-shared-object/{nodeIndex}")
-        void overwriteSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.MergeSharedObjectInfo sharedObjectInfo);
-
-        @RequestLine("POST {clusterBasePath}/check-merge-shared-object/{nodeIndex}")
-        boolean checkMergeSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.MergeSharedObjectInfo mergeSharedObjectInfo);
-
-        @RequestLine("POST {clusterBasePath}/check-delete-shared-object/{nodeIndex}")
-        boolean checkDeleteSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.DeleteSharedObjectInfo deleteSharedObjectInfo);
-
-        @RequestLine("GET {clusterBasePath}/get-shared-object")
-        ClusterService.MergeSharedObjectInfo getSharedObject(@Param("clusterBasePath") String clusterBasePath);
-
-        @RequestLine("GET {clusterBasePath}/get-shared-object/{nodeIndex}")
-        ClusterService.MergeSharedObjectInfo getSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex);
-
-        @RequestLine("POST {clusterBasePath}/sync-shared-object/{nodeIndex}")
-        void syncSharedObject(@Param("clusterBasePath") String clusterBasePath, @Param("nodeIndex") int nodeIndex, ClusterService.SharedObject sharedObject);
-
-        @RequestLine("POST {clusterBasePath}/check-shared-object-sequence")
-        Set<Integer> checkSharedObjectSeq(@Param("clusterBasePath") String clusterBasePath, Map<Integer, Long> sharedObjectSeq);
     }
 }

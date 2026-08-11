@@ -1,0 +1,41 @@
+[
+  {
+    "id": "opcua_test_server",
+    "group": "opcua_test",
+    "connectionUrl": "opcua-server://0.0.0.0:14840",
+    "initialCommandDelay": 1000,
+    "data": {
+      "tag1": 123,
+      "tag2": 45.6
+    },
+    "commands": [
+      {
+        "id": "on_client_write",
+        "type": "READ_REQUEST",
+        "periodGroup": -1,
+        "cmdScript": "def cmdFunc(name, value, receivedTime):\n    log.info('opcua client write received: {} = {}', name, str(value))\n    return [('written_' + name, str(value))]"
+      }
+    ]
+  },
+  {
+    "id": "opcua_test_client",
+    "group": "opcua_test",
+    "connectionUrl": "opcua-client://127.0.0.1:14840?subscriptionNodeIds=ns=2;s=opcua_test_server/tag1",
+    "initialCommandDelay": 1000,
+    "commands": [
+      {
+        "id": "read_tags",
+        "type": "READ_REQUEST",
+        "periodGroup": 5000,
+        "requestInfo": "[\"ns=2;s=opcua_test_server/tag1\", \"ns=2;s=opcua_test_server/tag2\"]",
+        "cmdScript": "def cmdFunc(received, receivedTime):\n    return [(item[0].split('/')[-1], str(item[1])) for item in received]"
+      },
+      {
+        "id": "on_data_change",
+        "type": "READ_REQUEST",
+        "periodGroup": -1,
+        "cmdScript": "def cmdFunc(nodeId, value, receivedTime):\n    return [('changed_' + str(nodeId).split('/')[-1], str(value))]"
+      }
+    ]
+  }
+]

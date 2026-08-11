@@ -10,10 +10,11 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.springframework.web.reactive.function.server.RouterFunctions;
+import reactor.netty.http.server.HttpServerRoutes;
 
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Consumer;
 
 @Slf4j
 public class DriverStarterKafkaOutput extends DriverStarter {
@@ -58,7 +59,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
                     driverEvents,
                     driverBasePath,
                     clusterEvents,
-                    routerFunctionBuilder,
+                    routes,
                     clusterStarterBuilder);
         }
     }
@@ -74,7 +75,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
                                     DriverEvents driverEvents,
                                     String driverBasePath,
                                     ClusterEvents clusterEvents,
-                                    RouterFunctions.Builder routerFunctionBuilder,
+                                    Consumer<HttpServerRoutes> routes,
                                     ClusterStarter.Builder clusterStarterBuilder) throws Exception {
         super(driverId,
                 loadBalancing,
@@ -82,7 +83,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
                 driverEvents,
                 driverBasePath,
                 clusterEvents,
-                routerFunctionBuilder,
+                routes,
                 clusterStarterBuilder);
 
         var props = new Properties();

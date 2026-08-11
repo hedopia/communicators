@@ -15,10 +15,8 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subjects.PublishSubject;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
+import org.graalvm.polyglot.Value;
 import org.javatuples.Triplet;
-import org.python.core.PyFunction;
-import org.python.core.PyObject;
-import org.python.core.PyString;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -63,14 +61,14 @@ abstract class DriverProtocol {
                 return new DriverProtocolUdpClient().create(driverService, defaultScript, device);
             case "udp-server":
                 return new DriverProtocolUdpServer().create(driverService, defaultScript, device);
-            case "secsgem-client":
-                return new DriverProtocolSecsGemClient().create(driverService, defaultScript, device);
-            case "secsgem-server":
-                return new DriverProtocolSecsGemServer().create(driverService, defaultScript, device);
             case "modbus-client":
                 return new DriverProtocolModbusClient().create(driverService, defaultScript, device);
             case "modbus-server":
                 return new DriverProtocolModbusServer().create(driverService, defaultScript, device);
+            case "opcua-client":
+                return new DriverProtocolOpcuaClient().create(driverService, defaultScript, device);
+            case "opcua-server":
+                return new DriverProtocolOpcuaServer().create(driverService, defaultScript, device);
             case "http-client":
                 return new DriverProtocolHttpClient().create(driverService, defaultScript, device);
             case "http-server":
@@ -85,10 +83,10 @@ abstract class DriverProtocol {
     protected DriverProtocol create(DriverService driverService, String defaultScript, Device device) throws Exception {
         log.trace("[{}] create", device.getId());
         this.driverService = driverService;
-        this.driverCommand = new DriverCommand(defaultScript, this);
         this.device = device;
         deviceId = device.getId();
         socketTimeout = device.getSocketTimeout();
+        this.driverCommand = new DriverCommand(defaultScript, this);
 
         initialCommandDelay = device.getInitialCommandDelay();
         if (initialCommandDelay < 100)
@@ -102,7 +100,7 @@ abstract class DriverProtocol {
             connection = device.getConnectionUrl().split("://", 2)[1].split("\\?",2);
             if (connection.length == 2) {
                 for (var sp : connection[1].split("&")) {
-                    var keyValue = sp.split("=");
+                    var keyValue = sp.split("=", 2);
                     if (keyValue.length != 2)
                         throw new Exception("option parsing error, option: " + connection[1]);
                     option.put(URLDecoder.decode(keyValue[0], StandardCharsets.UTF_8), URLDecoder.decode(keyValue[1], StandardCharsets.UTF_8));
@@ -121,14 +119,14 @@ abstract class DriverProtocol {
         var protocolScript = device.getProtocolScript();
         if (!Strings.isNullOrEmpty(protocolScript)) {
             try {
-                driverCommand.pythonInterpreter.exec(protocolScript);
+                driverCommand.pythonEngine.exec(protocolScript);
             } catch (Exception e) {
                 throw new Exception("execute protocol script failed", e);
             }
         }
     }
 
-    protected List<Response> requestCommand(String cmdId, int timeout, PyFunction function, BlockingQueue<Triplet<String, PyObject[], Long>> requestedDataQueue, PyObject initialValue) throws Exception {
+    protected List<Response> requestCommand(String cmdId, int timeout, Value function, BlockingQueue<Triplet<String, Value[], Long>> requestedDataQueue, Value initialValue) throws Exception {
         var data = requestedDataQueue.poll(timeout, TimeUnit.MILLISECONDS);
         if (data == null) {
             throw new Exception("cmdId=" + cmdId + ", command timeout");
@@ -156,12 +154,12 @@ abstract class DriverProtocol {
         return device;
     }
 
-    protected PyObject stringToPyObject(String s) {
-        return driverService.stringToPyObject(s);
+    protected Value stringToPyObject(String s) {
+        return driverCommand.stringToPyObject(s);
     }
 
     protected String toString(Object obj) {
-        if (obj instanceof PyString) return ((PyString) obj).asString();
+        if (obj instanceof Value) return PythonEngine.asString((Value) obj);
         else if (obj instanceof String) return (String) obj;
         try {
             return objectMapper.writeValueAsString(obj);
@@ -523,5 +521,5 @@ abstract class DriverProtocol {
      * @param nonPeriodicObject object for non-periodic commands
      * @return response
      */
-    abstract List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception;
+    abstract List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) throws Exception;
 }

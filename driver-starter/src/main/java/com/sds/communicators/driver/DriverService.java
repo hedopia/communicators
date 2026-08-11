@@ -16,13 +16,10 @@ import feign.FeignException;
 import feign.Param;
 import feign.QueryMap;
 import feign.RequestLine;
+import io.grpc.StatusRuntimeException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
-import org.python.core.PyFunction;
-import org.python.core.PyObject;
-import org.python.core.PyUnicode;
-import org.python.util.PythonInterpreter;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -36,7 +33,6 @@ class DriverService {
     private final String driverBasePath;
     private final Object driverMutex = new Object();
     private final Object connectAllMutex = new Object();
-    private final PyFunction jsonLoads;
     final DriverEvents driverEvents = DriverEvents.create();
     final Map<String, DriverProtocol> driverProtocols = new ConcurrentHashMap<>();
     final Map<String, Map<String, Response>> responseMap = new ConcurrentHashMap<>();
@@ -46,11 +42,6 @@ class DriverService {
     DriverService(DriverStarter driverStarter, String driverBasePath) throws Exception{
         this.driverStarter = driverStarter;
         this.driverBasePath = driverBasePath;
-
-        var py = new PythonInterpreter();
-        py.exec("from json import loads as json_loads");
-        jsonLoads = (PyFunction) py.get("json_loads");
-        if (jsonLoads == null) throw new Exception("json loads function is not loaded");
     }
 
     void dispose() {
@@ -69,15 +60,6 @@ class DriverService {
                     Thread.sleep(3000);
                 } catch (InterruptedException ignored) {}
             }
-        }
-    }
-
-    PyObject stringToPyObject(String s) {
-        var unicode = new PyUnicode(s);
-        try {
-            return jsonLoads.__call__(unicode);
-        } catch (Exception e) {
-            return unicode;
         }
     }
 
@@ -126,7 +108,7 @@ class DriverService {
                         ret.putAll(connectAll(deviceSet));
                 } else {
                     var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                                    ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToIndex(driverBasePath, deviceSet)),
+                                    ret.putAll(clusterStarter.grpcCall(targetUrl, DriverGrpc.CONNECT_ALL_TO_INDEX, deviceSet)),
                             "connect all to node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(deviceSet));
                     if (result != null) {
                         log.error("connect all to node-index: {} failed, connect to leader, devices: {}", nodeIndex, UtilFunc.joinDeviceId(deviceSet), result);
@@ -138,7 +120,7 @@ class DriverService {
         } else {
             var ret = new HashMap<String, String>();
             clusterStarter.toLeaderFuncConfirmed(targetUrl ->
-                            ret.putAll(clusterStarter.getClient(targetUrl, DriverClientApi.class).connectAllToLeader(driverBasePath, nodeIndex, devices)),
+                            ret.putAll(clusterStarter.grpcCall(targetUrl, DriverGrpc.CONNECT_ALL_TO_LEADER, new DriverGrpc.ConnectRequest(nodeIndex, devices))),
                     "connect all to leader for node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(devices));
             return ret;
         }
@@ -147,6 +129,8 @@ class DriverService {
     private String errorParser(Throwable e) {
         if (e instanceof FeignException && ((FeignException)e).responseBody().isPresent())
             return new String(((FeignException)e).responseBody().get().array(), StandardCharsets.UTF_8);
+        else if (e instanceof StatusRuntimeException && ((StatusRuntimeException) e).getStatus().getDescription() != null)
+            return ((StatusRuntimeException) e).getStatus().getDescription();
         else
             return e.getMessage();
     }
@@ -288,7 +272,7 @@ class DriverService {
         log.info("[{}] try to " + function + " command-ids({})", deviceId, commandIdList);
         if (driverProtocols.containsKey(deviceId)) {
             try {
-                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commandIdList, stringToPyObject(initialValue), isResponseOutput);
+                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commandIdList, initialValue, isResponseOutput);
             } catch (Exception e) {
                 var ret =  "[" + deviceId + "] " + function + " command-ids(" + commandIdList + ") failed";
                 log.error(ret, e);
@@ -306,7 +290,7 @@ class DriverService {
         log.info("[{}] try to " + function + " commands({})", deviceId, UtilFunc.joinCommandId(commands));
         if (driverProtocols.containsKey(deviceId)) {
             try {
-                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commands, stringToPyObject(initialValue), isResponseOutput);
+                return driverProtocols.get(deviceId).driverCommand.lockedExecuteCommands(commands, initialValue, isResponseOutput);
             } catch (Exception e) {
                 var ret =  "[" + deviceId + "] " + function + " commands(" + UtilFunc.joinCommandId(commands) + ") failed";
                 log.error(ret, e);
@@ -528,12 +512,6 @@ class DriverService {
     }
 
     private interface DriverClientApi {
-        @RequestLine("POST {driverBasePath}/connect-all-to-index")
-        Map<String, String> connectAllToIndex(@Param("driverBasePath") String driverBasePath, Set<Device> devices);
-
-        @RequestLine("POST {driverBasePath}/connect-all-to-leader/{nodeIndex}")
-        Map<String, String> connectAllToLeader(@Param("driverBasePath") String driverBasePath, @Param("nodeIndex") int nodeIndex, Set<Device> devices);
-
         @RequestLine("DELETE {driverBasePath}/disconnect")
         Map<String, String> disconnect(@Param("driverBasePath") String driverBasePath, List<String> deviceIds);
 

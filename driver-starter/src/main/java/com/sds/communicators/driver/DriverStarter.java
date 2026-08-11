@@ -11,19 +11,12 @@ import com.sds.communicators.common.struct.Response;
 import com.sds.communicators.common.struct.Status;
 import com.sds.communicators.common.type.StatusCode;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.StringSubstitutor;
-import org.python.core.PrePy;
-import org.python.core.Py;
-import org.python.core.PyString;
-import org.springframework.web.reactive.function.server.RouterFunctions;
+import reactor.netty.http.server.HttpServerRoutes;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import java.util.zip.ZipInputStream;
 
 @Slf4j
 public abstract class DriverStarter {
@@ -54,7 +47,7 @@ public abstract class DriverStarter {
         protected DriverEvents driverEvents;
         protected String driverBasePath;
         protected ClusterEvents clusterEvents;
-        protected RouterFunctions.Builder routerFunctionBuilder;
+        protected Consumer<HttpServerRoutes> routes;
         protected final ClusterStarter.Builder clusterStarterBuilder;
 
         protected Builder(String driverId, ClusterStarter.Builder clusterStarterBuilder) {
@@ -64,7 +57,7 @@ public abstract class DriverStarter {
             this.driverEvents = null;
             this.driverBasePath = "/driver";
             this.clusterEvents = null;
-            this.routerFunctionBuilder = null;
+            this.routes = null;
             this.clusterStarterBuilder = clusterStarterBuilder;
         }
 
@@ -93,8 +86,8 @@ public abstract class DriverStarter {
             return this;
         }
 
-        public DriverStarter.Builder setRouterFunctionBuilder(RouterFunctions.Builder routerFunctionBuilder) {
-            this.routerFunctionBuilder = routerFunctionBuilder;
+        public DriverStarter.Builder setRoutes(Consumer<HttpServerRoutes> routes) {
+            this.routes = routes;
             return this;
         }
 
@@ -107,17 +100,16 @@ public abstract class DriverStarter {
                   DriverEvents driverEvents,
                   String driverBasePath,
                   ClusterEvents clusterEvents,
-                  RouterFunctions.Builder routerFunctionBuilder,
+                  Consumer<HttpServerRoutes> routes,
                   ClusterStarter.Builder clusterStarterBuilder) throws Exception {
-        Py.initPython();
-        initializeTempFiles();
         this.driverId = driverId;
         this.loadBalancing = loadBalancing;
         this.defaultScript = defaultScript;
         driverService = new DriverService(this, driverBasePath);
         clusterStarter = clusterStarterBuilder
                 .setClusterEvents(driverService.clusterEvents().addAll(clusterEvents))
-                .setRouterFunctionBuilder(DriverServerRoutes.getDriverServerRoutes(this, driverService, driverBasePath, routerFunctionBuilder))
+                .setRoutes(DriverServerRoutes.getDriverServerRoutes(this, driverService, driverBasePath, routes))
+                .setGrpcServices(List.of(new DriverGrpcService(driverService).bindService()))
                 .build();
         driverService.clusterStarter = clusterStarter;
         driverService.driverEvents.addAll(driverEvents);
@@ -156,8 +148,8 @@ public abstract class DriverStarter {
         return clusterStarter;
     }
 
-    public RouterFunctions.Builder getRouterFunction() {
-        return clusterStarter.getRouterFunction();
+    public Consumer<HttpServerRoutes> getRoutes() {
+        return clusterStarter.getRoutes();
     }
 
     List<String> getResponseFormat(List<Response> responses, String driverId, int nodeIndex, String responseFormat) throws JsonProcessingException {
@@ -181,30 +173,6 @@ public abstract class DriverStarter {
                 "driverId", objectMapper.writeValueAsString(driverId),
                 "nodeIndex", nodeIndex,
                 "issuedTime", deviceStatus.getIssuedTime()));
-    }
-
-    private void initializeTempFiles() throws IOException {
-        var path = Files.createTempDirectory("driver-temp-");
-        path.toFile().deleteOnExit();
-        var src = PrePy.class.getProtectionDomain().getCodeSource().getLocation();
-        var stream = src.openStream();
-        var zip = new ZipInputStream(stream);
-        var entry = zip.getNextEntry();
-        while (entry != null) {
-            if (entry.getName().startsWith("Lib/")) {
-                if (entry.getName().endsWith(".class") || entry.getName().endsWith(".py")) {
-                    var f = new File(path.toUri().getPath() + entry.getName());
-                    f.deleteOnExit();
-                    FileUtils.copyToFile(zip, f);
-                } else {
-                    (new File(path.toUri().getPath() + entry.getName())).deleteOnExit();
-                }
-            }
-            entry = zip.getNextEntry();
-        }
-        zip.close();
-        System.setProperty("python.cachedir.skip", "true");
-        Py.getSystemState().path.append(new PyString(path.toUri().getPath() + "Lib/"));
     }
 
     void addDevices(Map<String, Device> deviceMap) throws JsonProcessingException {

@@ -1,43 +1,46 @@
 package com.sds.communicators.driver;
 
 import com.digitalpetri.modbus.ExceptionCode;
-import com.digitalpetri.modbus.requests.*;
-import com.digitalpetri.modbus.responses.*;
-import com.digitalpetri.modbus.slave.ModbusTcpSlave;
-import com.digitalpetri.modbus.slave.ModbusTcpSlaveConfig;
-import com.digitalpetri.modbus.slave.ServiceRequestHandler;
+import com.digitalpetri.modbus.exceptions.ModbusResponseException;
+import com.digitalpetri.modbus.pdu.ReadCoilsRequest;
+import com.digitalpetri.modbus.pdu.ReadCoilsResponse;
+import com.digitalpetri.modbus.pdu.ReadDiscreteInputsRequest;
+import com.digitalpetri.modbus.pdu.ReadDiscreteInputsResponse;
+import com.digitalpetri.modbus.pdu.ReadHoldingRegistersRequest;
+import com.digitalpetri.modbus.pdu.ReadHoldingRegistersResponse;
+import com.digitalpetri.modbus.pdu.ReadInputRegistersRequest;
+import com.digitalpetri.modbus.pdu.ReadInputRegistersResponse;
+import com.digitalpetri.modbus.pdu.WriteMultipleCoilsRequest;
+import com.digitalpetri.modbus.pdu.WriteMultipleCoilsResponse;
+import com.digitalpetri.modbus.pdu.WriteMultipleRegistersRequest;
+import com.digitalpetri.modbus.pdu.WriteMultipleRegistersResponse;
+import com.digitalpetri.modbus.pdu.WriteSingleCoilRequest;
+import com.digitalpetri.modbus.pdu.WriteSingleCoilResponse;
+import com.digitalpetri.modbus.pdu.WriteSingleRegisterRequest;
+import com.digitalpetri.modbus.pdu.WriteSingleRegisterResponse;
+import com.digitalpetri.modbus.server.ModbusRequestContext;
+import com.digitalpetri.modbus.server.ModbusServices;
+import com.digitalpetri.modbus.server.ModbusTcpServer;
+import com.digitalpetri.modbus.tcp.server.NettyTcpServerTransport;
 import com.google.common.base.Strings;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.Unpooled;
-import io.netty.util.ReferenceCountUtil;
-import io.reactivex.rxjava3.disposables.Disposable;
-import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.PyFunction;
-import org.python.core.PyInteger;
-import org.python.core.PyList;
-import org.python.core.PyObject;
+import org.graalvm.polyglot.Value;
 
 import java.time.ZonedDateTime;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 public class DriverProtocolModbusServer extends DriverProtocol {
-    private ModbusTcpSlave slave;
+    private ModbusTcpServer server;
     private String host;
     private int port;
-    private Disposable disposableOnReadHoldingRegisters = null;
-    private Disposable disposableOnReadInputRegisters = null;
-    private Disposable disposableOnReadCoils = null;
-    private Disposable disposableOnReadDiscreteInputs = null;
-    private Disposable disposableOnWriteSingleCoil = null;
-    private Disposable disposableOnWriteSingleRegister = null;
-    private Disposable disposableOnWriteMultipleCoils = null;
-    private Disposable disposableOnWriteMultipleRegisters = null;
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
@@ -51,264 +54,193 @@ public class DriverProtocolModbusServer extends DriverProtocol {
             host = "0.0.0.0";
         port = Integer.parseInt(hostPort[1]);
 
-        slave = new ModbusTcpSlave(new ModbusTcpSlaveConfig.Builder().build());
-        slave.setRequestHandler(new ServiceRequestHandler() {
-            @Override
-            public void onReadHoldingRegisters(ServiceRequestHandler.ServiceRequest<ReadHoldingRegistersRequest, ReadHoldingRegistersResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnReadHoldingRegisters = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 400001;
-                        try {
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), new PyInteger(request.getQuantity()), new PyInteger(service.getUnitId())});
-                            service.sendResponse(new ReadHoldingRegistersResponse(readRegisters(address, request.getQuantity(), service.getUnitId())));
-                        } catch (Exception e) {
-                            log.error("onReadHoldingRegisters failed, address={}, length={}, unitId={}", address, request.getQuantity(), service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onReadHoldingRegisters ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onReadInputRegisters(ServiceRequestHandler.ServiceRequest<ReadInputRegistersRequest, ReadInputRegistersResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnReadInputRegisters = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 300001;
-                        try {
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), new PyInteger(request.getQuantity()), new PyInteger(service.getUnitId())});
-                            service.sendResponse(new ReadInputRegistersResponse(readRegisters(address, request.getQuantity(), service.getUnitId())));
-                        } catch (Exception e) {
-                            log.error("onReadInputRegisters failed, address={}, length={}, unitId={}", address, request.getQuantity(), service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onReadInputRegisters ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onReadCoils(ServiceRequestHandler.ServiceRequest<ReadCoilsRequest, ReadCoilsResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnReadCoils = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 1;
-                        try {
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), new PyInteger(request.getQuantity()), new PyInteger(service.getUnitId())});
-                            service.sendResponse(new ReadCoilsResponse(Unpooled.copiedBuffer(readBits(address, request.getQuantity(), service.getUnitId(), true))));
-                        } catch (Exception e) {
-                            log.error("onReadCoils failed, address={}, length={}, unitId={}", address, request.getQuantity(), service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onReadCoils ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onReadDiscreteInputs(ServiceRequestHandler.ServiceRequest<ReadDiscreteInputsRequest, ReadDiscreteInputsResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnReadDiscreteInputs = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 100001;
-                        try {
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), new PyInteger(request.getQuantity()), new PyInteger(service.getUnitId())});
-                            service.sendResponse(new ReadDiscreteInputsResponse(Unpooled.copiedBuffer(readBits(address, request.getQuantity(), service.getUnitId(), false))));
-                        } catch (Exception e) {
-                            log.error("onReadDiscreteInputs failed, address={}, length={}, unitId={}", address, request.getQuantity(), service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onReadDiscreteInputs ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onWriteSingleCoil(ServiceRequestHandler.ServiceRequest<WriteSingleCoilRequest, WriteSingleCoilResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnWriteSingleCoil = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 1;
-                        var values = new PyList(Collections.singletonList(request.getValue() != 0));
-                        try {
-                            write(address, values, service.getUnitId(), true);
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), values, new PyInteger(service.getUnitId())});
-                            service.sendResponse(new WriteSingleCoilResponse(request.getAddress(), request.getValue()));
-                        } catch (Exception e) {
-                            log.error("onWriteSingleCoil failed, address={}, values={}, unitId={}", address, values, service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onWriteSingleCoil ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onWriteSingleRegister(ServiceRequestHandler.ServiceRequest<WriteSingleRegisterRequest, WriteSingleRegisterResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnWriteSingleRegister = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 400001;
-                        var values = new PyList(Collections.singletonList(request.getValue()));
-                        try {
-                            write(address, values, service.getUnitId(), false);
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), values, new PyInteger(service.getUnitId())});
-                            service.sendResponse(new WriteSingleRegisterResponse(request.getAddress(), request.getValue()));
-                        } catch (Exception e) {
-                            log.error("onWriteSingleRegister failed, address={}, values={}, unitId={}", address, values, service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onWriteSingleRegister ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onWriteMultipleCoils(ServiceRequestHandler.ServiceRequest<WriteMultipleCoilsRequest, WriteMultipleCoilsResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnWriteMultipleCoils = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 1;
-                        var values = new PyList(DriverProtocolModbusClient.readBits(request.getValues(), request.getQuantity()));
-                        try {
-                            write(address, values, service.getUnitId(), true);
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), values, new PyInteger(service.getUnitId())});
-                            service.sendResponse(new WriteMultipleCoilsResponse(request.getAddress(), request.getQuantity()));
-                        } catch (Exception e) {
-                            log.error("onWriteMultipleCoils failed, address={}, values={}, unitId={}", address, values, service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onWriteMultipleCoils ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
-
-            @Override
-            public void onWriteMultipleRegisters(ServiceRequestHandler.ServiceRequest<WriteMultipleRegistersRequest, WriteMultipleRegistersResponse> service) {
-                if (!isSetDisconnected) {
-                    disposableOnWriteMultipleRegisters = Schedulers.io().scheduleDirect(() -> {
-                        var request = service.getRequest();
-                        var address = request.getAddress() + 400001;
-                        var values = new PyList(DriverProtocolModbusClient.readRegister(request.getValues()));
-                        try {
-                            write(address, values, service.getUnitId(), false);
-                            executeNonPeriodicCommands(new PyObject[]{new PyInteger(address), values, new PyInteger(service.getUnitId())});
-                            service.sendResponse(new WriteMultipleRegistersResponse(request.getAddress(), request.getQuantity()));
-                        } catch (Exception e) {
-                            log.error("onWriteMultipleRegisters failed, address={}, values={}, unitId={}", address, values, service.getUnitId(), e);
-                            service.sendException(ExceptionCode.SlaveDeviceFailure);
-                        } finally {
-                            ReferenceCountUtil.release(request);
-                        }
-                    });
-                } else {
-                    log.trace("[{}] set disconnected -> onWriteMultipleRegisters ignored", deviceId);
-                    service.sendException(ExceptionCode.SlaveDeviceFailure);
-                    ReferenceCountUtil.release(service.getRequest());
-                }
-            }
+        var transport = NettyTcpServerTransport.create(cfg -> {
+            cfg.bindAddress = host;
+            cfg.port = port;
         });
+        server = ModbusTcpServer.create(transport, new DriverModbusServices());
         device.setConnectionCommand(false);
-    }
-
-    private void executeNonPeriodicCommands(PyObject[] input) throws Exception {
-        driverCommand.executeNonPeriodicCommands(input, ZonedDateTime.now().toInstant().toEpochMilli(), null);
-    }
-
-    private byte[] readBits(int address, int length, int unitId, boolean isCoil) throws Exception {
-        var values = read(address, length, unitId, isCoil);
-        if (values == null) throw new Exception("read values is null");
-        byte[] buf = new byte[(values.size() + 7) >> 3];
-        for (int i = 0; i < values.size(); i++) {
-            if ((Boolean) values.get(i)) buf[i >> 3] |= 1 << (i & 7);
-        }
-        return buf;
-    }
-
-    private ByteBuf readRegisters(int address, int length, int unitId) throws Exception {
-        var values = read(address, length, unitId, false);
-        if (values == null) throw new Exception("read values is null");
-        var registers = PooledByteBufAllocator.DEFAULT.buffer(length);
-        for (var value : values)
-            registers.writeShort((Integer) value);
-        return registers;
     }
 
     @Override
     void requestConnect() throws Exception {
         log.info("[{}] host={}, port={}, socket-timeout={}", deviceId, host, port, socketTimeout);
-        slave.bind(host, port).get(socketTimeout, TimeUnit.MILLISECONDS);
+        server.start();
     }
 
     @Override
-    void requestDisconnect() {
-        if (disposableOnReadHoldingRegisters != null && !disposableOnReadHoldingRegisters.isDisposed())
-            disposableOnReadHoldingRegisters.dispose();
-        if (disposableOnReadInputRegisters != null && !disposableOnReadInputRegisters.isDisposed())
-            disposableOnReadInputRegisters.dispose();
-        if (disposableOnReadCoils != null && !disposableOnReadCoils.isDisposed())
-            disposableOnReadCoils.dispose();
-        if (disposableOnReadDiscreteInputs != null && !disposableOnReadDiscreteInputs.isDisposed())
-            disposableOnReadDiscreteInputs.dispose();
-        if (disposableOnWriteSingleCoil != null && !disposableOnWriteSingleCoil.isDisposed())
-            disposableOnWriteSingleCoil.dispose();
-        if (disposableOnWriteSingleRegister != null && !disposableOnWriteSingleRegister.isDisposed())
-            disposableOnWriteSingleRegister.dispose();
-        if (disposableOnWriteMultipleCoils != null && !disposableOnWriteMultipleCoils.isDisposed())
-            disposableOnWriteMultipleCoils.dispose();
-        if (disposableOnWriteMultipleRegisters != null && !disposableOnWriteMultipleRegisters.isDisposed())
-            disposableOnWriteMultipleRegisters.dispose();
-        slave.shutdown();
+    void requestDisconnect() throws Exception {
+        server.stop();
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) {
         log.info("[{}] cmdId={}, requestCommand not supported for modbus server", deviceId, cmdId);
         return null;
     }
 
-    public PyList read(int address, int length, int unitId) {
+    private class DriverModbusServices implements ModbusServices {
+        @Override
+        public ReadHoldingRegistersResponse readHoldingRegisters(ModbusRequestContext context, int unitId, ReadHoldingRegistersRequest request) throws ModbusResponseException {
+            var address = request.address() + 400001;
+            checkDisconnected(request.getFunctionCode(), "onReadHoldingRegisters");
+            try {
+                executeNonPeriodicCommands(new Value[]{pyInt(address), pyInt(request.quantity()), pyInt(unitId)});
+                return new ReadHoldingRegistersResponse(readRegisterBytes(address, request.quantity(), unitId));
+            } catch (Exception e) {
+                log.error("onReadHoldingRegisters failed, address={}, length={}, unitId={}", address, request.quantity(), unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public ReadInputRegistersResponse readInputRegisters(ModbusRequestContext context, int unitId, ReadInputRegistersRequest request) throws ModbusResponseException {
+            var address = request.address() + 300001;
+            checkDisconnected(request.getFunctionCode(), "onReadInputRegisters");
+            try {
+                executeNonPeriodicCommands(new Value[]{pyInt(address), pyInt(request.quantity()), pyInt(unitId)});
+                return new ReadInputRegistersResponse(readRegisterBytes(address, request.quantity(), unitId));
+            } catch (Exception e) {
+                log.error("onReadInputRegisters failed, address={}, length={}, unitId={}", address, request.quantity(), unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public ReadCoilsResponse readCoils(ModbusRequestContext context, int unitId, ReadCoilsRequest request) throws ModbusResponseException {
+            var address = request.address() + 1;
+            checkDisconnected(request.getFunctionCode(), "onReadCoils");
+            try {
+                executeNonPeriodicCommands(new Value[]{pyInt(address), pyInt(request.quantity()), pyInt(unitId)});
+                return new ReadCoilsResponse(readBitBytes(address, request.quantity(), unitId, true));
+            } catch (Exception e) {
+                log.error("onReadCoils failed, address={}, length={}, unitId={}", address, request.quantity(), unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public ReadDiscreteInputsResponse readDiscreteInputs(ModbusRequestContext context, int unitId, ReadDiscreteInputsRequest request) throws ModbusResponseException {
+            var address = request.address() + 100001;
+            checkDisconnected(request.getFunctionCode(), "onReadDiscreteInputs");
+            try {
+                executeNonPeriodicCommands(new Value[]{pyInt(address), pyInt(request.quantity()), pyInt(unitId)});
+                return new ReadDiscreteInputsResponse(readBitBytes(address, request.quantity(), unitId, false));
+            } catch (Exception e) {
+                log.error("onReadDiscreteInputs failed, address={}, length={}, unitId={}", address, request.quantity(), unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public WriteSingleCoilResponse writeSingleCoil(ModbusRequestContext context, int unitId, WriteSingleCoilRequest request) throws ModbusResponseException {
+            var address = request.address() + 1;
+            checkDisconnected(request.getFunctionCode(), "onWriteSingleCoil");
+            var values = driverCommand.pythonEngine.toPyList(Collections.singletonList(request.value() != 0));
+            try {
+                write(address, values, unitId, true);
+                executeNonPeriodicCommands(new Value[]{pyInt(address), values, pyInt(unitId)});
+                return new WriteSingleCoilResponse(request.address(), request.value());
+            } catch (Exception e) {
+                log.error("onWriteSingleCoil failed, address={}, values={}, unitId={}", address, values, unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public WriteSingleRegisterResponse writeSingleRegister(ModbusRequestContext context, int unitId, WriteSingleRegisterRequest request) throws ModbusResponseException {
+            var address = request.address() + 400001;
+            checkDisconnected(request.getFunctionCode(), "onWriteSingleRegister");
+            var values = driverCommand.pythonEngine.toPyList(Collections.singletonList(request.value()));
+            try {
+                write(address, values, unitId, false);
+                executeNonPeriodicCommands(new Value[]{pyInt(address), values, pyInt(unitId)});
+                return new WriteSingleRegisterResponse(request.address(), request.value());
+            } catch (Exception e) {
+                log.error("onWriteSingleRegister failed, address={}, values={}, unitId={}", address, values, unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public WriteMultipleCoilsResponse writeMultipleCoils(ModbusRequestContext context, int unitId, WriteMultipleCoilsRequest request) throws ModbusResponseException {
+            var address = request.address() + 1;
+            checkDisconnected(request.getFunctionCode(), "onWriteMultipleCoils");
+            var values = driverCommand.pythonEngine.toPyList(DriverProtocolModbusClient.readBits(request.values(), request.quantity()));
+            try {
+                write(address, values, unitId, true);
+                executeNonPeriodicCommands(new Value[]{pyInt(address), values, pyInt(unitId)});
+                return new WriteMultipleCoilsResponse(request.address(), request.quantity());
+            } catch (Exception e) {
+                log.error("onWriteMultipleCoils failed, address={}, values={}, unitId={}", address, values, unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        @Override
+        public WriteMultipleRegistersResponse writeMultipleRegisters(ModbusRequestContext context, int unitId, WriteMultipleRegistersRequest request) throws ModbusResponseException {
+            var address = request.address() + 400001;
+            checkDisconnected(request.getFunctionCode(), "onWriteMultipleRegisters");
+            var values = driverCommand.pythonEngine.toPyList(DriverProtocolModbusClient.readRegister(request.values()));
+            try {
+                write(address, values, unitId, false);
+                executeNonPeriodicCommands(new Value[]{pyInt(address), values, pyInt(unitId)});
+                return new WriteMultipleRegistersResponse(request.address(), request.quantity());
+            } catch (Exception e) {
+                log.error("onWriteMultipleRegisters failed, address={}, values={}, unitId={}", address, values, unitId, e);
+                throw serverFailure(request.getFunctionCode());
+            }
+        }
+
+        private void checkDisconnected(int functionCode, String name) throws ModbusResponseException {
+            if (isSetDisconnected) {
+                log.trace("[{}] set disconnected -> {} ignored", deviceId, name);
+                throw serverFailure(functionCode);
+            }
+        }
+
+        private ModbusResponseException serverFailure(int functionCode) {
+            return new ModbusResponseException(functionCode, ExceptionCode.SLAVE_DEVICE_FAILURE.getCode());
+        }
+    }
+
+    private Value pyInt(int value) {
+        return driverCommand.pythonEngine.asValue(value);
+    }
+
+    private void executeNonPeriodicCommands(Value[] input) throws Exception {
+        driverCommand.executeNonPeriodicCommands(input, ZonedDateTime.now().toInstant().toEpochMilli(), null);
+    }
+
+    private byte[] readBitBytes(int address, int length, int unitId, boolean isCoil) throws Exception {
+        var values = read(address, length, unitId, isCoil);
+        if (values == null) throw new Exception("read values is null");
+        int size = (int) values.getArraySize();
+        byte[] buf = new byte[(size + 7) >> 3];
+        for (int i = 0; i < size; i++) {
+            if (values.getArrayElement(i).asBoolean()) buf[i >> 3] |= 1 << (i & 7);
+        }
+        return buf;
+    }
+
+    private byte[] readRegisterBytes(int address, int length, int unitId) throws Exception {
+        var values = read(address, length, unitId, false);
+        if (values == null) throw new Exception("read values is null");
+        int size = (int) values.getArraySize();
+        byte[] buf = new byte[size << 1];
+        for (int i = 0; i < size; i++) {
+            int value = values.getArrayElement(i).asInt();
+            buf[(i << 1)] = (byte) (value >> 8);
+            buf[(i << 1) + 1] = (byte) value;
+        }
+        return buf;
+    }
+
+    public Value read(int address, int length, int unitId) {
         return read(address, length, unitId, false);
     }
 
-    public PyList read(int address, int length, int unitId, boolean isCoil) {
+    public Value read(int address, int length, int unitId, boolean isCoil) {
         int tableIdx;
         int convertedAddress = address;
         if (length >= 0 && unitId >= 0 && isCoil && address > 0 && address + length <= 65537) {
@@ -348,41 +280,44 @@ public class DriverProtocolModbusServer extends DriverProtocol {
                     result.add(0);
             }
         }
-        return new PyList(result);
+        return driverCommand.pythonEngine.toPyList(result);
     }
 
-    public void write(int address, PyList values, int unitId) {
+    public void write(int address, Value values, int unitId) {
         write(address, values, unitId, false);
     }
 
-    public void write(int address, PyList values, int unitId, boolean isCoil) {
+    public void write(int address, Value values, int unitId, boolean isCoil) {
         int tableIdx;
         int convertedAddress = address;
-        if (unitId >= 0 && isCoil && address > 0 && address + values.size() <= 65537) {
+        long size = values == null || values.isNull() ? -1 : values.getArraySize();
+        if (size >= 0 && unitId >= 0 && isCoil && address > 0 && address + size <= 65537) {
             tableIdx = 0;
-        } else if (unitId >= 0 && !isCoil && address > 10000 && address + values.size() <= 20001) {
+        } else if (size >= 0 && unitId >= 0 && !isCoil && address > 10000 && address + size <= 20001) {
             tableIdx = 1;
             convertedAddress = address - 10001 + 100001;
-        } else if (unitId >= 0 && !isCoil && address > 100000 && address + values.size() <= 165537) {
+        } else if (size >= 0 && unitId >= 0 && !isCoil && address > 100000 && address + size <= 165537) {
             tableIdx = 1;
-        } else if (unitId >= 0 && !isCoil && address > 30000 && address + values.size() <= 40001) {
+        } else if (size >= 0 && unitId >= 0 && !isCoil && address > 30000 && address + size <= 40001) {
             tableIdx = 3;
             convertedAddress = address - 30001 + 300001;
-        } else if (unitId >= 0 && !isCoil && address > 300000 && address + values.size() <= 365537) {
+        } else if (size >= 0 && unitId >= 0 && !isCoil && address > 300000 && address + size <= 365537) {
             tableIdx = 3;
-        } else if (unitId >= 0 && !isCoil && address > 40000 && address + values.size() <= 50001) {
+        } else if (size >= 0 && unitId >= 0 && !isCoil && address > 40000 && address + size <= 50001) {
             tableIdx = 4;
             convertedAddress = address - 40001 + 400001;
-        } else if (unitId >= 0 && !isCoil && address > 400000 && address + values.size() <= 465537) {
+        } else if (size >= 0 && unitId >= 0 && !isCoil && address > 400000 && address + size <= 465537) {
             tableIdx = 4;
         } else {
             log.error("[{}] write failed, invalid address: {}, unitId: {}, isCoil: {}, values: {}", deviceId, address, unitId, isCoil, values);
             return;
         }
 
-        if (!values.isEmpty()) {
-            if (((tableIdx == 0 || tableIdx == 1) && !(values.get(0) instanceof Boolean)) ||
-                    ((tableIdx == 3 || tableIdx == 4) && !(values.get(0) instanceof Integer))) {
+        boolean isCoilTable = tableIdx == 0 || tableIdx == 1;
+        if (size > 0) {
+            var first = values.getArrayElement(0);
+            if ((isCoilTable && !first.isBoolean()) ||
+                    (!isCoilTable && !PythonEngine.isInteger(first))) {
                 log.error("[{}] write failed, invalid address: {}, unitId: {}, isCoil: {}, values: {}", deviceId, address, unitId, isCoil, values);
                 return;
             }
@@ -392,8 +327,10 @@ public class DriverProtocolModbusServer extends DriverProtocol {
         }
 
         var map = new HashMap<String, Object>();
-        for (int i = 0; i < values.size(); i++)
-            map.put(Integer.toString(i + convertedAddress), values.get(i));
+        for (int i = 0; i < size; i++) {
+            var element = values.getArrayElement(i);
+            map.put(Integer.toString(i + convertedAddress), isCoilTable ? element.asBoolean() : PythonEngine.asInt(element));
+        }
         setData(map, Collections.singletonList(Integer.toString(unitId)));
     }
 }

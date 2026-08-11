@@ -23,9 +23,8 @@ class RedirectFunction {
     private final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newCachedThreadPool();
 
     private final Set<String> nodeTargetUrls;
-    private final ClusterClient client;
+    private final ClusterGrpcClient client;
     private final ClusterStarter clusterStarter;
-    private final String clusterBasePath;
 
 
     void toLeaderFuncConfirmed(Consumer<String> consumer, String name) {
@@ -49,7 +48,7 @@ class RedirectFunction {
         else
             parallelExecute(nodeTargetUrls, targetUrl -> {
                 try {
-                    if (client.getClient(targetUrl, ClusterClient.ClusterClientApi.class).getNodeStatus(clusterBasePath).getPosition() == Position.LEADER)
+                    if (client.getNodeStatus(targetUrl).getPosition() == Position.LEADER)
                         leaderUrl.set(targetUrl);
                 } catch (Exception e) {
                     log.trace("({}) check status (url={}) failed to leader function::{}", name, targetUrl, e.getMessage());
@@ -86,7 +85,7 @@ class RedirectFunction {
                 candidates.putIfAbsent(clusterStarter.nodeIndex, clusterStarter.nodeUrl);
                 parallelExecute(nodeTargetUrls, targetUrl -> {
                     try {
-                        NodeStatus nodeStatus = client.getClient(targetUrl, ClusterClient.ClusterClientApi.class).getNodeStatus(clusterBasePath);
+                        NodeStatus nodeStatus = client.getNodeStatus(targetUrl);
                         if (nodeStatus.getPosition() == Position.LEADER)
                             existLeader.set(true);
                         else
@@ -105,7 +104,7 @@ class RedirectFunction {
                     for (int index : sortedCandidates) {
                         try {
                             log.info("set to leader (index={}, url={})", index, candidates.get(index));
-                            client.getClient(candidates.get(index), ClusterClient.ClusterClientApi.class).setToLeader(clusterBasePath);
+                            client.setToLeader(candidates.get(index));
                             break;
                         } catch (Exception e) {
                             log.error("set to leader (index={}, url={}) failed::{}", index, candidates.get(index), e.getMessage());
@@ -127,7 +126,7 @@ class RedirectFunction {
         else
             parallelExecute(nodeTargetUrls, targetUrl -> {
                 try {
-                    if (client.getClient(targetUrl, ClusterClient.ClusterClientApi.class).getNodeStatus(clusterBasePath).getNodeIndex() == nodeIndex)
+                    if (client.getNodeStatus(targetUrl).getNodeIndex() == nodeIndex)
                         indexUrl.set(targetUrl);
                 } catch (Exception e) {
                     log.trace("({}) check status (url={}) failed to index function::{}", name, targetUrl, e.getMessage());

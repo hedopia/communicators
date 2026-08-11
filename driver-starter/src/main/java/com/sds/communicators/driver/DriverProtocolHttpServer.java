@@ -11,7 +11,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.python.core.*;
+import org.graalvm.polyglot.Value;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import reactor.netty.http.server.HttpServer;
@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class DriverProtocolHttpServer extends DriverProtocolHttp {
-    private PyFunction protocolFunc = null;
+    private Value protocolFunc = null;
     private String host;
     private int port;
     private DisposableServer disposableServer = null;
@@ -43,8 +43,8 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         if (!Strings.isNullOrEmpty(protocolScript)) {
             try {
                 protocolScript = protocolScript.replaceFirst("def[ \t]+protocolFunc[ \t]*\\(", "def protocolFunc_" + deviceId + "(");
-                driverCommand.pythonInterpreter.exec(protocolScript);
-                protocolFunc = (PyFunction) driverCommand.pythonInterpreter.get("protocolFunc_" + deviceId);
+                driverCommand.pythonEngine.exec(protocolScript);
+                protocolFunc = driverCommand.pythonEngine.get("protocolFunc_" + deviceId);
             } catch (Exception e) {
                 throw new Exception("compile protocol script failed::" + e.getMessage(), e);
             }
@@ -90,7 +90,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
     }
 
     @Override
-    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, PyFunction function, PyObject initialValue, Object nonPeriodicObject) throws Exception {
+    List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) throws Exception {
         if (!(nonPeriodicObject instanceof List)) throw new DriverCommand.ScriptException("http-server only supports non-periodic commands");
         else if (isReadCommand) throw new DriverCommand.ScriptException("not supported command for http-server");
         ((List<String>) nonPeriodicObject).add(requestInfo);
@@ -104,10 +104,10 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         var path = decoder.path();
         var method = request.method().name();
         var headers = getPyHeaders(request.requestHeaders());
-        var rcvBody = useByteArrayBody ? new PyList(Arrays.asList(UtilFunc.arrayWrapper(body))) :
+        var rcvBody = useByteArrayBody ? driverCommand.pythonEngine.toPyList(UtilFunc.arrayWrapper(body)) :
                 stringToPyObject(new String(body, StandardCharsets.UTF_8));
         log.trace("[{}] request received, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, toString(rcvBody), params, headers);
-        PyObject[] received = new PyObject[]{new PyUnicode(method), new PyUnicode(path), rcvBody, params, headers};
+        Value[] received = new Value[]{driverCommand.pythonEngine.asValue(method), driverCommand.pythonEngine.asValue(path), rcvBody, params, headers};
         var requestInfoList = new ArrayList<String>();
         try {
             if (protocolFunc != null)
@@ -133,29 +133,27 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         }
     }
 
-    private PyDictionary getPyParams(Map<String, List<String>> params) {
-        var pyParams = new PyDictionary();
-        params.forEach((k, v) ->
-                pyParams.put(new PyString(k), new PyList(v.stream().map(PyString::new).collect(Collectors.toList()))));
+    private Value getPyParams(Map<String, List<String>> params) {
+        var pyParams = driverCommand.pythonEngine.newDict();
+        params.forEach((k, v) -> pyParams.putHashEntry(k, driverCommand.pythonEngine.toPyList(v)));
         return pyParams;
     }
 
-    private void executeProtocolFunc(PyObject[] received, long receivedTime, List<String> requestInfoList) throws Exception {
+    private void executeProtocolFunc(Value[] received, long receivedTime, List<String> requestInfoList) throws Exception {
         var arg = driverCommand.getArguments(protocolFunc, received, receivedTime, null);
-        PyObject result;
+        Value result;
         try {
-            result = protocolFunc.__call__(arg);
+            result = protocolFunc.execute(arg);
         } catch (Exception e) {
             throw new DriverCommand.ScriptException("protocol-function failed", e);
         }
-        if (result instanceof PyList) {
-            var list = new ArrayList<Object>((PyList) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, requestInfoList);
-        } else if (result instanceof PyTuple) {
-            var list = new ArrayList<Object>((PyTuple) result);
-            driverCommand.executeNonPeriodicCommands(list.stream().map(Object::toString).collect(Collectors.toList()), received, receivedTime, requestInfoList);
+        if (PythonEngine.isList(result) || PythonEngine.isTuple(result)) {
+            var list = new ArrayList<String>();
+            for (long i = 0; i < result.getArraySize(); i++)
+                list.add(PythonEngine.asString(result.getArrayElement(i)));
+            driverCommand.executeNonPeriodicCommands(list, received, receivedTime, requestInfoList);
         } else {
-            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, result.getType().getName(), toString(Arrays.asList(received)));
+            log.error("[{}] protocol function invalid output type, output type={}, received data={}", deviceId, PythonEngine.typeName(result), toString(Arrays.asList(received)));
         }
     }
 
@@ -179,13 +177,13 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         Map<String, List<String>> headers;
     }
 
-    public String requestInfo(PyObject httpStatusCode, PyObject body, PyObject... headers) {
+    public String requestInfo(Value httpStatusCode, Value body, Value... headers) {
         var sb = new StringBuilder();
-        if (httpStatusCode instanceof PyInteger)
+        if (PythonEngine.isInteger(httpStatusCode))
             sb.append("\"httpStatusCode\":")
-                    .append(httpStatusCode)
+                    .append(PythonEngine.asInt(httpStatusCode))
                     .append(",");
-        if (!(body instanceof PyNone))
+        if (!PythonEngine.isNone(body))
             sb.append("\"body\":")
                     .append(makeBody(body))
                     .append(",");
