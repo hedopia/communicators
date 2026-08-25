@@ -4,6 +4,8 @@
     "group": "opcua_test",
     "connectionUrl": "opcua-server://0.0.0.0:14840",
     "initialCommandDelay": 1000,
+    "maxRetryConnect": 10,
+    "retryConnectDelay": 2000,
     "data": {
       "tag1": 123,
       "tag2": 45.6
@@ -22,6 +24,8 @@
     "group": "opcua_test",
     "connectionUrl": "opcua-client://127.0.0.1:14840?subscriptionNodeIds=ns=2;s=opcua_test_server/tag1",
     "initialCommandDelay": 1000,
+    "maxRetryConnect": 10,
+    "retryConnectDelay": 2000,
     "commands": [
       {
         "id": "read_tags",

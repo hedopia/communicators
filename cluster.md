@@ -1,159 +1,217 @@
 # cluster-starter
-- Cluster composition library (works with direct node-to-node communication only, without an external coordinator)
-- All nodes in the cluster share a data-map (shared-object)
-- Each node can use one or more NIC cards
-- When the LEADER node fails, the node with the lowest nodeIndex in the cluster is elected as LEADER
-- The REST server for external users is based on reactor-netty, while **internal node-to-node communication uses gRPC** (unary, Jackson JSON payload, plaintext)
----
-## Module structure
+
+`cluster-starter` creates a cluster through direct node-to-node communication without an external coordinator.
+
+- Every node maintains a shared-object map.
+- A node may be reachable through one or more network interfaces and URLs.
+- If the leader fails, the participating node with the lowest `nodeIndex` is elected.
+- Public REST endpoints and redirect proxying use Reactor Netty HTTP.
+- Internal node communication uses unary gRPC calls with Jackson-serialized payloads over plaintext connections.
+
+## Architecture
+
+```text
+ClusterStarter          Entry point and lifecycle owner for the HTTP and gRPC servers
+ClusterServerRoutes     Public cluster REST API and redirect proxy routes
+ClusterService          Leader/follower transitions, heartbeats, and shared-object synchronization
+ClusterGrpc             gRPC method descriptors and Jackson marshalling; no protobuf code generation
+ClusterGrpcService      Internal gRPC handlers
+ClusterGrpcClient       Cached gRPC channels and deadline-aware unary calls
+ClusterClient           Generic Feign REST client and load-balanced client
+RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
+ClusterEvents           Event registration API
 ```
-ClusterStarter          Entry point. Created with a Builder, manages the server lifecycle (start/dispose) (HTTP + gRPC servers)
-ClusterServerRoutes     Cluster REST API routing (reactor-netty HttpServerRoutes) — external/redirect
-ClusterService          Position transitions (LEADER/FOLLOWER), heartbeat, shared-object synchronization
-ClusterGrpc             gRPC definitions for internal node-to-node communication (MethodDescriptor + Jackson marshaller, no protobuf codegen)
-ClusterGrpcService      gRPC server implementation for internal node-to-node communication (heartbeat, shared-object sync, LEADER election/status check)
-ClusterGrpcClient       gRPC client for internal node-to-node communication (node URL → host:(serverPort + grpcPortOffset), channel cache)
-ClusterClient           General-purpose REST client (Feign) + load balancing client (used by driver-starter, etc.)
-RedirectFunction        Executes functions against the LEADER/a specific node, LEADER election, parallel execution utilities
-ClusterEvents           Cluster event registration (builder pattern)
+
+## Runtime behavior
+
+1. During startup, the node temporarily serves `GET /index` on its configured HTTP port.
+2. It queries `nodeTargetUrls` and automatically identifies the URL that refers to itself. Startup fails if no local URL can be identified.
+3. The node starts an internal gRPC server on `serverPort + grpcPortOffset`.
+4. After waiting up to `leaderLostTimeoutSeconds` for an existing leader, node `1` starts as leader when no leader is found; other nodes start as followers.
+5. Every node broadcasts a heartbeat containing its position and shared-object sequence at `heartbeatSendingIntervalMillis`.
+6. When the leader heartbeat is missing for `leaderLostTimeoutSeconds`, the active candidate with the lowest `nodeIndex` becomes the new leader.
+7. Shared-object changes are propagated through the leader. Sequence mismatches trigger synchronization.
+8. After a communication failure or split-brain recovery, the leader's state overwrites divergent follower state and emits the `overwritten` event.
+9. A partition without quorum is marked inactive.
+
+The internal gRPC port must be allowed through the firewall in addition to the public HTTP port.
+
+## Configuration
+
+Create a cluster with:
+
+```java
+ClusterStarter.builder(nodeTargetUrls, serverPort, nodeIndex)
 ```
-### Behavior overview
-- On startup, a temporary server (`GET /index`) is brought up on its own serverPort and nodeTargetUrls are queried to **automatically determine its own URL** (startup fails if it cannot be determined)
-- Internal node-to-node communication (heartbeat, shared-object sync, LEADER election/status check) uses **gRPC** — each node listens for gRPC on port `serverPort + grpcPortOffset` (plaintext; the port must be allowed through the firewall). The REST API for external users and the redirect proxy remain on HTTP
-- After waiting for `leaderLostTimeoutSeconds`, the node starts as LEADER if its nodeIndex is 1, otherwise as FOLLOWER
-- Every node sends a heartbeat to all nodes at the `heartbeatSendingIntervalMillis` interval (including position and shared-object sequence)
-- If no LEADER heartbeat arrives for `leaderLostTimeoutSeconds`, the candidate with the smallest nodeIndex is elected as LEADER
-- shared-object changes are propagated through the LEADER, and are synchronized automatically when the sequence does not match. When recovering from a communication failure/split brain, the data is overwritten based on the LEADER (an overwritten event is raised)
-- A cluster that does not meet the quorum is inactivated (split brain handling)
----
-## config (ClusterStarter.Builder)
-- nodeTargetUrls: Set of node URL addresses (order does not matter; enter one or more URL addresses per node)
-- serverPort: Server port number of this node
-- nodeIndex: Unique number per node (starting from 1)
-- quorum: Quorum. In a split brain state, only a cluster containing at least the quorum number of nodes is activated (quorum <= 0: maxClusterSize/2+1) (default: 0)
-- leaderLostTimeoutSeconds: If no heartbeat arrives from the LEADER for leaderLostTimeoutSeconds [sec], a new LEADER is elected. Also the wait time on initial startup used to detect an already-elected LEADER node (default: 20)
-- heartbeatSendingIntervalMillis: Heartbeat sending interval [ms] (default: 2000)
-- clusterEvents: Registers functions to run when events occur (`ClusterEvents` builder; each event registers an id and a function)
-  - activated: Cluster activated (quorum satisfied)
-  - inactivated: Cluster inactivated (quorum not met)
-  - becomeLeader / becomeFollower: Position transition
-  - clusterAdded(int nodeIndex): A node joined
-  - clusterDeleted(int nodeIndex, Map<String, Object> sharedObject): A node left (the leaving node's shared-object is passed)
-  - overwritten(int nodeIndex): A communication failure, split brain, etc. was resolved and this node's shared-object was overwritten with the LEADER's shared-object
-  - splitBrainResolved: Split brain resolved
-- routes: For adding REST APIs (`java.util.function.Consumer<reactor.netty.http.server.HttpServerRoutes>`)
-- clusterBasePath: REST API base url (default: "/cluster")
-- connectTimeoutMillis: Client connectTimeout [ms] (common to REST/gRPC) (default: 1000)
-- readTimeoutMillis: Client readTimeout [ms] (REST readTimeout / gRPC deadline) (default: 60000)
-- grpcPortOffset: gRPC listen port offset for internal node-to-node communication — gRPC port = serverPort + grpcPortOffset (default: 10000)
-- grpcServices: List of additional services to register on the gRPC server alongside the internal cluster services (`List<io.grpc.ServerServiceDefinition>`, default: none)
----
-## Usage example
-pom.xml
+
+| Builder value | Description | Default |
+|---|---|---:|
+| `nodeTargetUrls` | URLs for all nodes. A node may have more than one URL. Ordering is irrelevant. | Required |
+| `serverPort` | Public HTTP port for this node | Required |
+| `nodeIndex` | Unique node number, starting at `1` | Required |
+| `quorum` | Minimum active partition size. A value at or below zero selects `maxClusterSize / 2 + 1`. | `0` |
+| `leaderLostTimeoutSeconds` | Leader-loss timeout and initial leader-discovery wait | `20` |
+| `heartbeatSendingIntervalMillis` | Heartbeat interval in milliseconds | `2000` |
+| `clusterEvents` | Cluster event handlers | None |
+| `routes` | Additional Reactor Netty HTTP routes | None |
+| `clusterBasePath` | Base path for the cluster REST API | `/cluster` |
+| `connectTimeoutMillis` | REST and gRPC connection timeout | `1000` |
+| `readTimeoutMillis` | REST read timeout and gRPC deadline | `60000` |
+| `grpcPortOffset` | Offset added to `serverPort` for the internal gRPC listener | `10000` |
+| `grpcServices` | Additional `ServerServiceDefinition` instances registered with the internal server | None |
+
+### Cluster events
+
+`ClusterEvents` supports the following handlers:
+
+- `activated`: quorum has been reached.
+- `inactivated`: quorum has been lost.
+- `becomeLeader`: this node became leader.
+- `becomeFollower`: this node became a follower.
+- `clusterAdded(int nodeIndex)`: a node joined.
+- `clusterDeleted(int nodeIndex, Map<String, Object> sharedObject)`: a node left; its last shared object is supplied.
+- `overwritten(int nodeIndex)`: this node's shared object was replaced with the leader's state.
+- `splitBrainResolved`: a split-brain condition was resolved.
+
+## Dependency
+
 ```xml
 <dependency>
     <groupId>com.sds.communicators</groupId>
     <artifactId>cluster-starter</artifactId>
-    <version>{cluster-version}</version>
+    <version>3.8</version>
 </dependency>
 ```
-### With its own server
-``` java
+
+## Example
+
+```java
 var cluster = ClusterStarter.builder(
-                Set.of("http://127.0.0.1:4001","http://127.0.0.1:4002"),
+                Set.of("http://127.0.0.1:4001", "http://127.0.0.1:4002"),
                 4001,
                 1)
         .setQuorum(1)
         .setLeaderLostTimeoutSeconds(20)
         .setHeartbeatSendingIntervalMillis(2000)
         .setClusterEvents(new ClusterEvents()
-                .becomeLeader("on-leader", () -> log.info("become leader"))
-                .clusterDeleted("on-deleted", (nodeIndex, sharedObject) -> log.info("node {} deleted", nodeIndex)))
-        .setRoutes(routes -> routes.get("/hello",
+                .becomeLeader("on-leader", () -> log.info("became leader"))
+                .clusterDeleted(
+                        "on-deleted",
+                        (nodeIndex, sharedObject) ->
+                                log.info("node {} deleted", nodeIndex)))
+        .setRoutes(routes -> routes.get(
+                "/hello",
                 (request, response) -> response.sendString(Mono.just("world"))))
         .setClusterBasePath("/cluster")
         .setConnectTimeoutMillis(1000)
-        .setReadTimeoutMillis(60000).build();
+        .setReadTimeoutMillis(60000)
+        .build();
 
-cluster.start(); // default server thread pool size=200
-// cluster.start(serverThreadPoolSize); // specify thread pool size
-// cluster.dispose();                   // shutdown
+cluster.start();        // Starts the HTTP and gRPC servers.
+// cluster.start(100);  // Starts with a custom HTTP server thread-pool size.
+// cluster.dispose();   // Stops the cluster.
 ```
-### Without its own server
-``` java
+
+The default HTTP server thread-pool size used by `start()` is `200`.
+
+To use an externally managed HTTP server:
+
+```java
 cluster.startWithoutHttpServer();
-```
-Registering a server (example: reactor-netty)
-``` java
+
 HttpServer.create()
         .port(4001)
         .route(cluster.getRoutes()::accept)
         .bindNow();
 ```
----
-## Main ClusterStarter APIs
-### shared-object
-``` java
-cluster.mergeSharedObject(Map<String, Object> obj);        // merge into this node's shared-object (propagated via the LEADER)
-cluster.mergeSharedObject(Object value, String... path);   // merge at the specified path
-cluster.deleteSharedObject(String... path);                // delete a path
-cluster.deleteSharedObject(List<List<String>> paths);      // delete multiple paths
-cluster.getSharedObject();                                 // this node's shared-object
-cluster.getSharedObjectMap();                              // shared-objects of all nodes (by nodeIndex)
-cluster.getItem(int nodeIndex, String[] path);             // look up an item of a specific node
+
+`startWithoutHttpServer()` still starts the internal gRPC server.
+
+## Main Java API
+
+### Shared objects
+
+```java
+cluster.mergeSharedObject(Map<String, Object> value);
+cluster.mergeSharedObject(Object value, String... path);
+cluster.deleteSharedObject(String... path);
+cluster.deleteSharedObject(List<List<String>> paths);
+cluster.getSharedObject();
+cluster.getSharedObjectMap();
+cluster.getItem(nodeIndex, path);
 ```
-### Cluster status/control
-``` java
-cluster.getNodeIndex();       // own nodeIndex
-cluster.getPosition();        // own position (LEADER/FOLLOWER)
+
+Changes to a node's shared object are propagated through the leader.
+
+### Cluster state and control
+
+```java
+cluster.getNodeIndex();
+cluster.getPosition();
 cluster.getPosition(nodeIndex);
-cluster.getCluster();         // set of nodeIndexes currently participating in the cluster
-cluster.isActivated();        // whether the quorum is satisfied
-cluster.forceToLeader();      // force transition to LEADER
-cluster.forceToFollower();    // force transition to FOLLOWER
+cluster.getCluster();
+cluster.isActivated();
+cluster.forceToLeader();
+cluster.forceToFollower();
 ```
-### Executing functions against nodes / clients
-``` java
-cluster.toLeaderFuncConfirmed(url -> {...}, "name");  // execute against the LEADER node URL (retries until success, electing one if needed)
-cluster.toLeaderFunc(url -> {...}, "name");           // execute against the LEADER node URL (returns Throwable on failure)
-cluster.toIndexFunc(nodeIndex, url -> {...}, "name"); // execute against a specific node URL
-cluster.toAllFunc(url -> {...}, "name");              // execute in parallel against all node URLs
-cluster.parallelExecute(collection, item -> {...});   // parallel execution utility
-cluster.getClient(url, Api.class);                    // create a Feign client (@RequestLine interface)
-cluster.grpcCall(url, methodDescriptor, request);     // unary gRPC call reusing the internal channel cache/deadline
-cluster.loadBalancedClient(urls, Api.class, api -> {...}); // round-robin execution over a URL set
+
+### Targeted execution and clients
+
+```java
+cluster.toLeaderFuncConfirmed(url -> { }, "action-name");
+cluster.toLeaderFunc(url -> { }, "action-name");
+cluster.toIndexFunc(nodeIndex, url -> { }, "action-name");
+cluster.toAllFunc(url -> { }, "action-name");
+cluster.parallelExecute(collection, item -> { });
+cluster.getClient(url, Api.class);
+cluster.grpcCall(url, methodDescriptor, request);
+cluster.loadBalancedClient(urls, Api.class, api -> { });
 ```
----
-## REST API (base: clusterBasePath, default "/cluster")
-### Query/control
+
+`toLeaderFuncConfirmed` retries and may initiate an election. `getClient` creates a Feign client. `grpcCall` reuses the internal channel cache and configured deadline.
+
+## REST API
+
+The default base path is `/cluster`.
+
 | Method | Path | Description |
 |---|---|---|
-| GET | /node-status | Own node status (nodeIndex, position, activated) |
-| GET | /get-node-index | Own nodeIndex |
-| GET | /leader-url | LEADER node URL |
-| GET | /index-url/{nodeIndex} | URL of a specific node |
-| GET | /get-cluster-nodes | List of nodeIndexes participating in the cluster |
-| GET | /get-cluster-urls | List of registered node URLs |
-| POST | /add-cluster-node | Add a node URL (body: url string) |
-| PUT | /set-to-leader | Force transition to LEADER |
-| PUT | /set-to-follower | Force transition to FOLLOWER |
-| GET | /shared-object-map | Query all shared-objects |
-| GET | /shared-object-seq | Query the shared-object sequence |
+| `GET` | `/node-status` | Return this node's `nodeIndex`, position, and activation state |
+| `GET` | `/get-node-index` | Return this node's index |
+| `GET` | `/leader-url` | Return the current leader URL |
+| `GET` | `/index-url/{nodeIndex}` | Return a URL for a specific node |
+| `GET` | `/get-cluster-nodes` | Return participating node indexes |
+| `GET` | `/get-cluster-urls` | Return registered node URLs |
+| `POST` | `/add-cluster-node` | Add a node URL; the request body is the URL string |
+| `PUT` | `/set-to-leader` | Force this node to become leader |
+| `PUT` | `/set-to-follower` | Force this node to become a follower |
+| `GET` | `/shared-object-map` | Return every node's shared object |
+| `GET` | `/shared-object-seq` | Return shared-object sequence information |
 
-### redirect (no base path)
+### Redirect routes
+
+Redirect routes do not use `clusterBasePath`.
+
 | Method | Path | Description |
 |---|---|---|
-| ANY | /redirect-to-leader/{path} | Proxy the request to the LEADER node |
-| ANY | /redirect-to-index/{nodeIndex}/{path} | Proxy the request to a specific node |
-- The method, headers, query string, and body are forwarded as-is (e.g. `PUT /redirect-to-leader/driver/reconnect-all`)
+| Any | `/redirect-to-leader/{path}` | Proxy the request to the leader |
+| Any | `/redirect-to-index/{nodeIndex}/{path}` | Proxy the request to a specific node |
 
-### Internal (node-to-node communication) — gRPC
-Internal node-to-node communication (heartbeat, cluster-deleted, get/merge/delete/check/overwrite/sync/remove shared-object, shared-object sequence check,
-internal node-status/set-to-leader/node-index queries) is performed over **gRPC** rather than REST.
-- service: `cluster.ClusterInternal` (unary); payloads are serialized as Jackson JSON (no protobuf codegen)
-- listen port: `serverPort + grpcPortOffset` (default offset 10000), plaintext
-- Client calls are blocking unary, with deadline = `readTimeoutMillis`
----
-## Notes
-- driver-starter embeds and uses cluster-starter (see [driver.md](driver.md) — device information sharing, load balancing between nodes)
-- Dependencies: reactor-netty, jackson, feign-core, grpc-netty-shaded, grpc-stub, grpc-api, guava, slf4j
+The HTTP method, headers, query string, and body are preserved. For example:
+
+```text
+PUT /redirect-to-leader/driver/reconnect-all
+```
+
+## Internal gRPC API
+
+Heartbeat, node status, leader changes, cluster deletion, and shared-object get/merge/delete/check/overwrite/sync/remove operations use gRPC rather than REST.
+
+- Service: `cluster.ClusterInternal`
+- Call type: unary
+- Payload: Jackson JSON; no generated protobuf classes
+- Listener: `serverPort + grpcPortOffset`
+- Transport: plaintext
+- Client deadline: `readTimeoutMillis`
+
+`driver-starter` embeds this module and registers its own internal driver service on the same gRPC server. See the [driver guide](driver.md).

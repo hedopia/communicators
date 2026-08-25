@@ -1,21 +1,29 @@
 package com.sds.communicators.driver;
 
 import com.google.common.base.Strings;
+
 import com.sds.communicators.common.struct.Response;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.milo.opcua.sdk.core.AccessLevel;
 import org.eclipse.milo.opcua.sdk.core.Reference;
+import org.eclipse.milo.opcua.sdk.server.EndpointConfig;
+import org.eclipse.milo.opcua.sdk.server.ManagedNamespaceWithLifecycle;
 import org.eclipse.milo.opcua.sdk.server.OpcUaServer;
-import org.eclipse.milo.opcua.sdk.server.api.config.OpcUaServerConfig;
+import org.eclipse.milo.opcua.sdk.server.OpcUaServerConfig;
+import org.eclipse.milo.opcua.sdk.server.identity.AnonymousIdentityValidator;
+import org.eclipse.milo.opcua.sdk.server.identity.CompositeValidator;
+import org.eclipse.milo.opcua.sdk.server.identity.IdentityValidator;
 import org.eclipse.milo.opcua.sdk.server.identity.UsernameIdentityValidator;
+import org.eclipse.milo.opcua.sdk.server.items.DataItem;
+import org.eclipse.milo.opcua.sdk.server.items.MonitoredItem;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaFolderNode;
 import org.eclipse.milo.opcua.sdk.server.nodes.UaVariableNode;
 import org.eclipse.milo.opcua.sdk.server.nodes.filters.AttributeFilters;
 import org.eclipse.milo.opcua.sdk.server.util.HostnameUtil;
 import org.eclipse.milo.opcua.stack.core.AttributeId;
 import org.eclipse.milo.opcua.stack.core.Identifiers;
-import org.eclipse.milo.opcua.stack.core.security.DefaultCertificateManager;
+
 import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
 import org.eclipse.milo.opcua.stack.core.transport.TransportProfile;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
@@ -24,12 +32,12 @@ import org.eclipse.milo.opcua.stack.core.types.builtin.LocalizedText;
 import org.eclipse.milo.opcua.stack.core.types.builtin.Variant;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.MessageSecurityMode;
 import org.eclipse.milo.opcua.stack.core.types.structured.BuildInfo;
-import org.eclipse.milo.opcua.stack.server.EndpointConfiguration;
-import org.eclipse.milo.opcua.stack.server.security.DefaultServerCertificateValidator;
-import org.eclipse.milo.opcua.stack.core.security.DefaultTrustListManager;
+
+import org.eclipse.milo.opcua.stack.transport.server.tcp.OpcTcpServerTransport;
+import org.eclipse.milo.opcua.stack.transport.server.tcp.OpcTcpServerTransportConfig;
 import org.graalvm.polyglot.Value;
 
-import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,6 +55,11 @@ public class DriverProtocolOpcuaServer extends DriverProtocolOpcua {
     private String username = null;
     private String password = null;
     private boolean anonymous = true;
+    private SecurityPolicy securityPolicy = SecurityPolicy.None;
+    private MessageSecurityMode securityMode = MessageSecurityMode.None;
+    private Path pkiDir;
+    private String keyStorePassword;
+    private OpcuaSecurityStore securityStore;
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
@@ -61,47 +74,79 @@ public class DriverProtocolOpcuaServer extends DriverProtocolOpcua {
             password = option.get("password");
             anonymous = Boolean.parseBoolean(option.getOrDefault("anonymous", "false"));
         }
+
+        if (!Strings.isNullOrEmpty(option.get("securityPolicy")))
+            securityPolicy = SecurityPolicy.valueOf(option.get("securityPolicy"));
+        else if (username != null)
+            securityPolicy = SecurityPolicy.Basic256Sha256;
+
+        if (securityPolicy != SecurityPolicy.None)
+            securityMode = "Sign".equals(option.get("securityMode")) ?
+                    MessageSecurityMode.Sign : MessageSecurityMode.SignAndEncrypt;
+        if (username != null && securityPolicy == SecurityPolicy.None)
+            throw new Exception("OPC UA username authentication requires a secure securityPolicy");
+
+        pkiDir = Path.of(option.getOrDefault("pkiDir", "pki/opcua/server/" + deviceId));
+        keyStorePassword = option.get("keyStorePassword");
         device.setConnectionCommand(false);
     }
 
     @Override
     void requestConnect() throws Exception {
         log.info("[{}] bind={}:{}{}, socket-timeout={}", deviceId, bindAddress, port, path, socketTimeout);
-        var identityValidator = new UsernameIdentityValidator(anonymous, challenge ->
+        var usernameValidator = new UsernameIdentityValidator(challenge ->
                 username != null && username.equals(challenge.getUsername()) &&
                         (password == null ? challenge.getPassword() == null || challenge.getPassword().isEmpty() : password.equals(challenge.getPassword())));
+        IdentityValidator identityValidator = anonymous ?
+                new CompositeValidator(AnonymousIdentityValidator.INSTANCE, usernameValidator) :
+                usernameValidator;
 
-        var endpoints = new LinkedHashSet<EndpointConfiguration>();
-        for (var hostname : HostnameUtil.getHostnames(bindAddress)) {
-            endpoints.add(EndpointConfiguration.newBuilder()
+        var applicationUri = "urn:sds:communicators:driver:" + deviceId;
+        var hostnames = new LinkedHashSet<String>();
+        hostnames.add(HostnameUtil.getHostname());
+        hostnames.addAll(HostnameUtil.getHostnames(bindAddress, true, false));
+
+        securityStore = OpcuaSecurityStore.openServer(
+                pkiDir,
+                keyStorePassword,
+                applicationUri,
+                "communicators driver server " + deviceId,
+                hostnames);
+        var serverCertificate = securityStore.certificate();
+
+        var endpoints = new LinkedHashSet<EndpointConfig>();
+        for (var hostname : hostnames) {
+            var endpointBuilder = EndpointConfig.newBuilder()
                     .setBindAddress(bindAddress)
                     .setBindPort(port)
                     .setHostname(hostname)
                     .setPath(path)
-                    .addTokenPolicies(OpcUaServerConfig.USER_TOKEN_POLICY_ANONYMOUS, OpcUaServerConfig.USER_TOKEN_POLICY_USERNAME)
-                    .setSecurityPolicy(SecurityPolicy.None)
-                    .setSecurityMode(MessageSecurityMode.None)
-                    .setTransportProfile(TransportProfile.TCP_UASC_UABINARY)
-                    .build());
+                    .setCertificate(serverCertificate)
+                    .setSecurityPolicy(securityPolicy)
+                    .setSecurityMode(securityMode)
+                    .setTransportProfile(TransportProfile.TCP_UASC_UABINARY);
+            if (username != null)
+                endpointBuilder.addTokenPolicy(OpcUaServerConfig.USER_TOKEN_POLICY_USERNAME);
+            if (anonymous)
+                endpointBuilder.addTokenPolicy(OpcUaServerConfig.USER_TOKEN_POLICY_ANONYMOUS);
+            endpoints.add(endpointBuilder.build());
         }
-
-        var pkiDir = Files.createTempDirectory("opcua-pki-" + deviceId).toFile();
-        pkiDir.deleteOnExit();
-        var trustListManager = new DefaultTrustListManager(pkiDir);
 
         var config = OpcUaServerConfig.builder()
                 .setApplicationName(LocalizedText.english("communicators driver"))
-                .setApplicationUri("urn:sds:communicators:driver:" + deviceId)
+                .setApplicationUri(applicationUri)
                 .setProductUri("urn:sds:communicators:driver")
                 .setBuildInfo(new BuildInfo("urn:sds:communicators:driver", "SDS", "communicators driver", "", "", DateTime.now()))
                 .setEndpoints(endpoints)
                 .setIdentityValidator(identityValidator)
-                .setCertificateManager(new DefaultCertificateManager())
-                .setTrustListManager(trustListManager)
-                .setCertificateValidator(new DefaultServerCertificateValidator(trustListManager))
+                .setCertificateManager(securityStore.certificateManager())
                 .build();
 
-        server = new OpcUaServer(config);
+        server = new OpcUaServer(config, transportProfile -> {
+            if (transportProfile != TransportProfile.TCP_UASC_UABINARY)
+                throw new IllegalArgumentException("unsupported transport profile: " + transportProfile);
+            return new OpcTcpServerTransport(OpcTcpServerTransportConfig.newBuilder().build());
+        });
         namespace = new DriverNamespace(server);
         namespace.startup();
         server.startup().get(socketTimeout, TimeUnit.MILLISECONDS);
@@ -109,11 +154,19 @@ public class DriverProtocolOpcuaServer extends DriverProtocolOpcua {
 
     @Override
     void requestDisconnect() throws Exception {
-        if (server != null) {
-            namespace.shutdown();
-            server.shutdown().get(socketTimeout, TimeUnit.MILLISECONDS);
+        try {
+            if (server != null) {
+                if (namespace != null)
+                    namespace.shutdown();
+                server.shutdown().get(socketTimeout, TimeUnit.MILLISECONDS);
+            }
+        } finally {
             server = null;
             namespace = null;
+            if (securityStore != null) {
+                securityStore.close();
+                securityStore = null;
+            }
         }
     }
 
@@ -145,7 +198,7 @@ public class DriverProtocolOpcuaServer extends DriverProtocolOpcua {
         namespace.writeNode(name, javaToVariant(value == null || value.isNull() ? null : value.as(Object.class), null));
     }
 
-    private class DriverNamespace extends org.eclipse.milo.opcua.sdk.server.api.ManagedNamespaceWithLifecycle {
+    private class DriverNamespace extends ManagedNamespaceWithLifecycle {
         private final Map<String, UaVariableNode> nodes = new ConcurrentHashMap<>();
         private final org.eclipse.milo.opcua.sdk.server.util.SubscriptionModel subscriptionModel;
         private UaFolderNode folder;
@@ -158,22 +211,22 @@ public class DriverProtocolOpcuaServer extends DriverProtocolOpcua {
         }
 
         @Override
-        public void onDataItemsCreated(List<org.eclipse.milo.opcua.sdk.server.api.DataItem> dataItems) {
+        public void onDataItemsCreated(List<DataItem> dataItems) {
             subscriptionModel.onDataItemsCreated(dataItems);
         }
 
         @Override
-        public void onDataItemsModified(List<org.eclipse.milo.opcua.sdk.server.api.DataItem> dataItems) {
+        public void onDataItemsModified(List<DataItem> dataItems) {
             subscriptionModel.onDataItemsModified(dataItems);
         }
 
         @Override
-        public void onDataItemsDeleted(List<org.eclipse.milo.opcua.sdk.server.api.DataItem> dataItems) {
+        public void onDataItemsDeleted(List<DataItem> dataItems) {
             subscriptionModel.onDataItemsDeleted(dataItems);
         }
 
         @Override
-        public void onMonitoringModeChanged(List<org.eclipse.milo.opcua.sdk.server.api.MonitoredItem> monitoredItems) {
+        public void onMonitoringModeChanged(List<MonitoredItem> monitoredItems) {
             subscriptionModel.onMonitoringModeChanged(monitoredItems);
         }
 

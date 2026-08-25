@@ -1,7 +1,39 @@
-/** Device setting (subset of the Java Device struct; extra keys are preserved) */
+export type CommandType =
+  | "READ_REQUEST"
+  | "STARTING_READ_REQUEST"
+  | "STOPPING_READ_REQUEST"
+  | "WRITE_REQUEST"
+  | "STARTING_WRITE_REQUEST"
+  | "STOPPING_WRITE_REQUEST"
+  | "REQUEST"
+  | "STARTING_REQUEST"
+  | "STOPPING_REQUEST";
+
+export interface Command {
+  id: string;
+  order?: number;
+  type?: CommandType;
+  periodGroup?: number;
+  requestInfo?: string | null;
+  afterDelay?: number;
+  commandTimeout?: number;
+  cmdScript?: string | null;
+}
+
+/** Device setting consumed by the Java Device struct; extra keys are preserved. */
 export interface Device {
   id: string;
+  group?: string;
+  responseTimeout?: number;
+  maxRetryConnect?: number;
+  retryConnectDelay?: number;
+  socketTimeout?: number;
+  initialCommandDelay?: number;
   connectionUrl?: string;
+  protocolScript?: string;
+  commands?: Command[];
+  connectionCommand?: boolean;
+  data?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

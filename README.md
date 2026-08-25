@@ -1,65 +1,97 @@
-# communicators
+# Communicators
 
-A collection of equipment (device) communication driver and cluster libraries.
-It forms a cluster using only direct node-to-node communication (gRPC) without an external coordinator, and collects/controls device data over various industrial protocols (TCP/UDP/Modbus/HTTP/OPC UA).
+Communicators is a collection of device communication drivers and clustering libraries. It forms a cluster through direct node-to-node gRPC communication without an external coordinator, and collects or controls device data through industrial protocols such as TCP, UDP, Modbus TCP, HTTP, and OPC UA.
 
 ## Modules
 
-```
-common ◄─── cluster-starter ◄─── driver-starter ◄─┬── io-db
-                                                  ├── io-kafka
-                                                  └── io-none
+```text
+common <--- cluster-starter <--- driver-starter <--+-- io-db
+                                                   +-- io-kafka
+                                                   +-- io-none
 ```
 
-| Module | Type | Description | Document |
+| Module | Type | Purpose | Documentation |
 |---|---|---|---|
-| common | library | Shared structs (Device, Command, Response, Status), enums, utilities (UtilFunc, LoadBalancer) | - |
-| cluster-starter | library | Cluster composition: LEADER election, heartbeat, shared-object sharing, redirect proxy | [cluster.md](cluster.md) |
-| driver-starter | library | Device communication driver: protocol implementations, Python 3 script engine (GraalPy), REST API, Web UI | [driver.md](driver.md) |
-| io-db | application | driver-starter execution example (Spring Boot, logs collected data — example of inheriting a custom output) | - |
-| io-kafka | application | driver-starter execution example (Spring Boot, sends collected data to Kafka) | - |
-| io-none | application | driver-starter execution example (Spring Boot, no output of collected data — for testing/verification) | - |
+| `common` | Library | Shared structures (`Device`, `Command`, `Response`, and `Status`), enums, and utilities | — |
+| `cluster-starter` | Library | Leader election, heartbeat, shared-object replication, and redirect proxying | [Cluster guide](cluster.md) |
+| `driver-starter` | Library | Protocol drivers, GraalPy scripts, REST API, and the management UI | [Driver guide](driver.md) |
+| `io-db` | Application | Spring Boot example with a custom output implementation that logs collected data | — |
+| `io-kafka` | Application | Spring Boot example that publishes collected data to Kafka | — |
+| `io-none` | Application | Spring Boot example without an output sink, intended for testing and validation | — |
 
-- **common**: Data structures shared by all modules. The version is common across all modules (currently 3.8)
-- **cluster-starter**: Based on a reactor-netty HTTP server (external REST/redirect) + gRPC (internal node-to-node communication, port = serverPort + grpcPortOffset)
-- **driver-starter**: Embeds cluster-starter to support device load balancing / failover between nodes.
-  Provides per-output implementations (None/File/Kafka/Rest), and a custom output can be implemented by extending `DriverStarter`.
-  Includes a Web UI (`driver-starter/ui`, React + Vite → `src/main/resources/static`)
-- **io-db / io-kafka / io-none**: Executable modules that run the driver by injecting configuration only (`io.*` in `application.yml`) via Spring Boot.
-  The HTTP server is handled by driver-starter's reactor-netty (`spring.main.web-application-type: none`)
+All Java modules currently use project version `3.8`.
 
-## Tech stack
+### Module relationships
 
-- Java 17, Gradle (multi-project, gradle wrapper included — the existing pom.xml is kept for reference)
-- reactor-netty (HTTP server/client), gRPC (grpc-netty-shaded, internal node-to-node communication — Jackson JSON payload), Feign (general-purpose REST client), Jackson
-- GraalPy 24.1.2 (Python 3 script engine, `org.graalvm.polyglot`)
-- RxJava 3, digitalpetri modbus, Eclipse Milo (OPC UA), kafka-clients
-- io modules: Spring Boot (used as a configuration/execution container)
+- `common` contains the data model shared by every module.
+- `cluster-starter` uses Reactor Netty for the public HTTP API and gRPC for internal node communication. The default gRPC port is `serverPort + 10000`.
+- `driver-starter` embeds `cluster-starter` and provides device load balancing and failover. Output implementations are available for no output, files, Kafka, and REST; applications can also extend `DriverStarter` to implement a custom output.
+- `driver-starter/ui` is a React and Vite application. Its production build is written to `driver-starter/src/main/resources/static`.
+- The `io-*` modules use Spring Boot as a configuration and process container. Their Spring web application type is `none`; the HTTP server is owned by `driver-starter`.
+
+## Technology stack
+
+- Java 17 and a Gradle multi-project build
+- Reactor Netty for HTTP servers and clients
+- gRPC with Jackson-serialized payloads for internal node calls
+- Feign, Jackson, and RxJava 3
+- GraalPy 24.1.2 for Python 3 device scripts
+- DigitalPetri Modbus 2.1.6
+- Eclipse Milo 1.1.6 for OPC UA client and server support
+- Kafka clients and Spring Boot in the executable example modules
+- React 19, TypeScript, Axios, and Vite for the management UI
+
+The Gradle build is authoritative. Maven POM files are retained for consumers and reference builds.
 
 ## Build
 
-JDK 17 required. The project is a Gradle multi-project and is built all at once from the root
-(the inter-module dependency order common → cluster-starter → driver-starter → io-db/io-kafka/io-none is guaranteed automatically).
+JDK 17 is required. Run the build from the repository root; Gradle resolves module order automatically.
 
-```bash
-gradlew build          # full build (including tests)
-gradlew build -x test  # excluding tests
+Windows:
+
+```powershell
+.\gradlew.bat build
+.\gradlew.bat build -x test
 ```
 
-- Artifacts: `build/libs/` of each module (io-db/io-kafka/io-none produce a Spring Boot `bootJar` — e.g. `io-kafka-3.8.jar`)
-- A specific module only: `gradlew :driver-starter:build`, `gradlew :io-kafka:bootJar`
+Linux or macOS:
 
-## Run (io module example)
+```bash
+./gradlew build
+./gradlew build -x test
+```
+
+Useful module-specific commands:
+
+```text
+gradlew :driver-starter:build
+gradlew :io-kafka:bootJar
+```
+
+Build artifacts are written to each module's `build/libs` directory. The `io-db`, `io-kafka`, and `io-none` modules produce executable Spring Boot JARs.
+
+## Run an example application
 
 ```bash
 java -jar io-kafka/build/libs/io-kafka-3.8.jar
 ```
 
-- Configuration: `io.*` in `application.yml` (driver-id, node-index, node-target-urls, quorum, Kafka address/topic/format, etc.)
-- Web UI after startup: `http://{host}:{server.port}/driver`
-- When forming a cluster, assign a unique `io.node-index` to each node and list the URLs of all nodes in `io.node-target-urls`
+Configure the application through the `io.*` properties in its `application.yml`. Important settings include the driver ID, node index, node target URLs, quorum, REST base paths, and output-specific settings such as Kafka topics.
 
-## Documents
+After startup, open the management UI at:
 
-- [cluster.md](cluster.md) — cluster-starter structure, config, API, REST endpoints
-- [driver.md](driver.md) — driver-starter structure, config, Device/Command, per-protocol options, Python script guide, REST endpoints
+```text
+http://{host}:{server.port}/driver/
+```
+
+For a multi-node cluster:
+
+1. Assign a unique `io.node-index` to every node.
+2. List all node HTTP URLs in `io.node-target-urls`.
+3. Allow both the HTTP port and the internal gRPC port (`server.port + grpc-port-offset`) through the firewall.
+
+## Documentation
+
+- [Cluster guide](cluster.md): cluster architecture, configuration, lifecycle, Java API, and REST API
+- [Driver guide](driver.md): devices, commands, protocol options, Python scripting, REST API, and the Web UI
+- [UI development guide](driver-starter/ui/README.md): frontend architecture, scripts, proxying, and production output

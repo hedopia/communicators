@@ -9,7 +9,6 @@ import com.digitalpetri.modbus.pdu.WriteMultipleCoilsRequest;
 import com.digitalpetri.modbus.pdu.WriteMultipleRegistersRequest;
 import com.digitalpetri.modbus.pdu.WriteSingleCoilRequest;
 import com.digitalpetri.modbus.pdu.WriteSingleRegisterRequest;
-import com.digitalpetri.modbus.tcp.client.NettyTcpClientTransport;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import lombok.ToString;
@@ -47,12 +46,9 @@ public class DriverProtocolModbusClient extends DriverProtocol {
         if (option.containsKey("combineData"))
             combineData = Boolean.parseBoolean(option.get("combineData"));
 
-        var transport = NettyTcpClientTransport.create(cfg -> {
-            cfg.hostname = host;
-            cfg.port = port;
-            cfg.connectTimeout = Duration.ofMillis(socketTimeout);
-            cfg.connectPersistent = false;
-        });
+        // keep connection timeout and retry behavior under the driver lifecycle instead of
+        // delegating it to the fsm-based default transport
+        var transport = new ModbusTcpSocketTransport(host, port, socketTimeout);
         master = ModbusTcpClient.create(transport, cfg -> cfg.setRequestTimeout(Duration.ofMillis(socketTimeout)));
     }
 

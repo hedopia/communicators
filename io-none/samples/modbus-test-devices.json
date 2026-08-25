@@ -4,6 +4,8 @@
     "group": "modbus_test",
     "connectionUrl": "modbus-server://0.0.0.0:15020",
     "initialCommandDelay": 1000,
+    "maxRetryConnect": 10,
+    "retryConnectDelay": 2000,
     "data": {
       "1": { "400001": 11, "400002": 22, "400003": 0 }
     },
@@ -21,6 +23,8 @@
     "group": "modbus_test",
     "connectionUrl": "modbus-client://127.0.0.1:15020?unitId=1",
     "initialCommandDelay": 1000,
+    "maxRetryConnect": 10,
+    "retryConnectDelay": 2000,
     "commands": [
       {
         "id": "read_regs",

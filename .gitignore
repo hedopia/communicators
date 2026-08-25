@@ -2,7 +2,6 @@ target/
 !**/src/main/**
 !**/src/test/**
 
-.gradle
 .idea
 *.iws
 *.iml

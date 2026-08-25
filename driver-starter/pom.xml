@@ -14,7 +14,7 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- align milo's netty 4.1.x with reactor-netty's 4.2.x -->
+            <!-- keep Reactor Netty and all driver transports on one Netty 4.2.x line -->
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-bom</artifactId>
@@ -67,20 +67,20 @@
             <version>2.1.6</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.milo</groupId>
-            <artifactId>sdk-client</artifactId>
-            <version>0.6.16</version>
+            <!-- shared by Milo 1.1.6 and Modbus 2.1.6 -->
+            <groupId>com.digitalpetri.netty</groupId>
+            <artifactId>netty-channel-fsm</artifactId>
+            <version>1.0.2</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.milo</groupId>
-            <artifactId>sdk-server</artifactId>
-            <version>0.6.16</version>
+            <artifactId>milo-sdk-client</artifactId>
+            <version>1.1.6</version>
         </dependency>
         <dependency>
-            <!-- milo 0.6.x requires javax.xml.bind.DatatypeConverter at runtime (removed from JDK 11+) -->
-            <groupId>javax.xml.bind</groupId>
-            <artifactId>jaxb-api</artifactId>
-            <version>2.3.1</version>
+            <groupId>org.eclipse.milo</groupId>
+            <artifactId>milo-sdk-server</artifactId>
+            <version>1.1.6</version>
         </dependency>
         <dependency>
             <groupId>org.graalvm.polyglot</groupId>

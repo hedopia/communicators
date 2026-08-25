@@ -21,7 +21,8 @@ function ResponsesTab() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    const timeout = window.setTimeout(refresh, 0);
+    return () => window.clearTimeout(timeout);
   }, [refresh]);
   useAutoRefresh(autoRefresh, 5000, refresh);
 
