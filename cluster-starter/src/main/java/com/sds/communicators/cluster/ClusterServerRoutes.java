@@ -221,7 +221,9 @@ class ClusterServerRoutes {
     }
 
     private Mono<String> requestBody(HttpServerRequest request) {
-        return request.receive().aggregate().asString(StandardCharsets.UTF_8).defaultIfEmpty("");
+        // the body arrives on an event loop; continue the (blocking) handler on a virtual thread
+        return RouteDispatcher.continueOnWorker(
+                request.receive().aggregate().asString(StandardCharsets.UTF_8).defaultIfEmpty(""));
     }
 
     private void redirect(HttpServerRoutes routes) {

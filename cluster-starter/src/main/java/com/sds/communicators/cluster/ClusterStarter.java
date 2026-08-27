@@ -9,7 +9,6 @@ import reactor.netty.DisposableServer;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
 import reactor.netty.http.server.HttpServerRoutes;
-import reactor.netty.resources.LoopResources;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -192,20 +191,22 @@ public class ClusterStarter {
 
     public java.util.function.Consumer<HttpServerRoutes> getRoutes() {
         return routes -> {
-            clusterServerRoutes.apply(routes);
+            // every handler below is blocking, so dispatch each request to its own worker thread
+            // instead of running it on the event loop that accepted it
+            var dispatched = RouteDispatcher.perRequestThread(routes);
+            clusterServerRoutes.apply(dispatched);
             if (additionalRoutes != null)
-                additionalRoutes.accept(routes);
+                additionalRoutes.accept(dispatched);
         };
     }
 
-    private void startServer(int serverThreadPoolSize, boolean httpServer) throws Exception {
+    private void startServer(boolean httpServer) throws Exception {
         if (server != null)
             server.disposeNow();
 
         if (httpServer) {
             server = HttpServer.create()
                     .port(serverPort)
-                    .runOn(LoopResources.create("http", serverThreadPoolSize, true))
                     .doOnConnection(c -> {
                         serverChannels.add(c.channel());
                         c.onDispose(() -> serverChannels.remove(c.channel()));
@@ -227,20 +228,19 @@ public class ClusterStarter {
     public void startWithoutHttpServer() throws Throwable {
         if (!isStarted) {
             isStarted = true;
-            startServer(-1, false);
+            startServer(false);
             clusterService.start();
         }
     }
 
+    /**
+     * Starts the HTTP server on Reactor Netty's default event loops. They only carry I/O:
+     * every route handler is dispatched to its own worker thread by {@link RouteDispatcher}.
+     */
     public void start() throws Throwable {
-        int DEFAULT_SERVER_THREAD_POOL_SIZE = 200;
-        start(DEFAULT_SERVER_THREAD_POOL_SIZE);
-    }
-
-    public void start(int serverThreadPoolSize) throws Throwable {
         if (!isStarted) {
             isStarted = true;
-            startServer(serverThreadPoolSize, true);
+            startServer(true);
             clusterService.start();
         }
     }

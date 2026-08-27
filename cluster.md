@@ -7,6 +7,7 @@
 - If the leader fails, the participating node with the lowest `nodeIndex` is elected.
 - Public REST endpoints and redirect proxying use Reactor Netty HTTP.
 - Internal node communication uses HTTP calls with Jackson-serialized payloads, served on the same port as the public API.
+- Route handlers are blocking and run on a per-request worker thread, so event loops stay free for I/O.
 
 ## Architecture
 
@@ -15,6 +16,7 @@ ClusterStarter          Entry point and lifecycle owner for the HTTP server
 ClusterServerRoutes     Public cluster REST API, redirect proxy, and internal node-to-node routes
 ClusterService          Leader/follower transitions, heartbeats, and shared-object synchronization
 ClusterInternalClient   Typed client for the internal node-to-node routes
+RouteDispatcher         Runs each request's handler on its own worker thread
 ClusterClient           Generic Feign REST client and load-balanced client
 RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
 ClusterEvents           Event registration API
@@ -104,11 +106,17 @@ var cluster = ClusterStarter.builder(
         .build();
 
 cluster.start();        // Starts the HTTP server.
-// cluster.start(100);  // Starts with a custom HTTP server thread-pool size.
 // cluster.dispose();   // Stops the cluster.
 ```
 
-The default HTTP server thread-pool size used by `start()` is `200`.
+The HTTP server runs on Reactor Netty's default event loops, which carry I/O only. Handlers are blocking and
+never run on an event loop: `getRoutes()` wraps every route so each request is dispatched to its own worker
+thread, from an unbounded pool that grows with concurrency and reclaims idle threads. This is the
+thread-per-request model of a servlet container, without a fixed ceiling, so there is no pool size to tune.
+
+Virtual threads are deliberately not used for this. GraalPy creates a polyglot context per device while a
+connect request is being served, and Truffle rejects that on a virtual thread while its optimizing runtime
+is active.
 
 To use an externally managed HTTP server:
 

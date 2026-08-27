@@ -128,13 +128,6 @@ public abstract class DriverStarter {
         }
     }
 
-    public void start(int serverThreadPoolSize) throws Throwable {
-        if (!isStarted) {
-            isStarted = true;
-            clusterStarter.start(serverThreadPoolSize);
-        }
-    }
-
     public void dispose() {
         log.info("try to dispose driver-starter");
         clusterStarter.dispose();

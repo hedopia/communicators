@@ -3,6 +3,7 @@ package com.sds.communicators.driver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sds.communicators.cluster.RouteDispatcher;
 import com.sds.communicators.common.struct.Command;
 import com.sds.communicators.common.struct.Device;
 import com.sds.communicators.common.type.StatusCode;
@@ -295,7 +296,9 @@ class DriverServerRoutes {
     }
 
     private static Mono<String> requestBody(HttpServerRequest request) {
-        return request.receive().aggregate().asString(StandardCharsets.UTF_8).defaultIfEmpty("");
+        // the body arrives on an event loop; continue the (blocking) handler on a virtual thread
+        return RouteDispatcher.continueOnWorker(
+                request.receive().aggregate().asString(StandardCharsets.UTF_8).defaultIfEmpty(""));
     }
 
     private static String contentType(String path) {
