@@ -31,10 +31,10 @@ All Java modules currently use project version `3.8`.
 
 ## Technology stack
 
-- Java 17 and a Gradle multi-project build
+- Java 21 and a Gradle multi-project build
 - Reactor Netty for HTTP servers and clients
 - Feign, Jackson, and RxJava 3
-- GraalPy 24.1.2 for Python 3 device scripts
+- GraalPy 23.1.12.1 for Python 3 device scripts (Python 3.10.8), on the 23.1 line that GraalVM for JDK 21 provides
 - DigitalPetri Modbus 2.1.6
 - Eclipse Milo 1.1.6 for OPC UA client and server support
 - Kafka clients and Spring Boot in the executable example modules
@@ -44,7 +44,7 @@ Gradle is the only build system; there are no Maven POM files.
 
 ## Build
 
-JDK 17 is required. The Gradle wrapper is not committed, so build with a local Gradle 9 installation (verified with 9.7.0). In IntelliJ IDEA, open Settings -> Build, Execution, Deployment -> Build Tools -> Gradle and set Distribution to `Specific Version` so the IDE downloads one.
+GraalVM for JDK 21 is required (verified with GraalVM CE 21.0.2). A plain JDK 21 also builds and runs, but GraalPy then falls back to its interpreter: runtime compilation of guest code needs the GraalVM runtime. The Gradle wrapper is not committed, so build with a local Gradle 9 installation (verified with 9.7.0). In IntelliJ IDEA, open Settings -> Build, Execution, Deployment -> Build Tools -> Gradle and set Distribution to `Specific Version` so the IDE downloads one.
 
 Run the build from the repository root; Gradle resolves module order automatically.
 

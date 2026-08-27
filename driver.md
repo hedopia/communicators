@@ -38,8 +38,8 @@ Each Device owns one `DriverProtocol` instance and one Python context. Script gl
 
 ## Dependencies and compatibility
 
-- Java 17
-- GraalPy 24.1.2
+- Java 21, running on GraalVM for JDK 21 so that GraalPy uses its optimizing runtime
+- GraalPy 23.1.12.1 (Python 3.10.8). The 23.1 line matches the Truffle compiler that GraalVM for JDK 21 bundles; 24.x would not.
 - DigitalPetri Modbus 2.1.6
 - Eclipse Milo client and server 1.1.6
 - Netty 4.2.17.Final, aligned through the Netty BOM
