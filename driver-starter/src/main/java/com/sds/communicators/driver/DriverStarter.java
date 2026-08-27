@@ -109,7 +109,6 @@ public abstract class DriverStarter {
         clusterStarter = clusterStarterBuilder
                 .setClusterEvents(driverService.clusterEvents().addAll(clusterEvents))
                 .setRoutes(DriverServerRoutes.getDriverServerRoutes(this, driverService, driverBasePath, clusterStarterBuilder.getClusterBasePath(), routes))
-                .setGrpcServices(List.of(new DriverGrpcService(driverService).bindService()))
                 .build();
         driverService.clusterStarter = clusterStarter;
         driverService.driverEvents.addAll(driverEvents);

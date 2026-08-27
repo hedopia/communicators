@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 
 @Slf4j
 class DriverServerRoutes {
+    static final String INTERNAL_PATH = "/internal";
+
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     static Consumer<HttpServerRoutes> getDriverServerRoutes(DriverStarter driverStarter, DriverService driverService, String driverBasePath, String clusterBasePath, Consumer<HttpServerRoutes> additionalRoutes) throws IOException {
@@ -226,6 +228,31 @@ class DriverServerRoutes {
                     }
                 });
             });
+            // node-to-node communication, served on the same port as the public API
+            routes.post(driverBasePath + INTERNAL_PATH + "/connect-all-to-index", (request, response) -> {
+                log.trace(request.uri());
+                return requestBody(request).flatMap(body -> {
+                    try {
+                        Set<Device> devices = objectMapper.readValue(body, new TypeReference<Set<Device>>() {});
+                        return ok(response, driverService.connectAll(devices));
+                    } catch (JsonProcessingException e) {
+                        return badRequest(response, "invalid request body::" + e.getMessage());
+                    }
+                });
+            });
+            routes.post(driverBasePath + INTERNAL_PATH + "/connect-all-to-leader/{nodeIndex}", (request, response) -> {
+                log.trace(request.uri());
+                int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+                return requestBody(request).flatMap(body -> {
+                    try {
+                        Set<Device> devices = objectMapper.readValue(body, new TypeReference<Set<Device>>() {});
+                        return ok(response, driverService.connectAllToLeader(nodeIndex, devices));
+                    } catch (JsonProcessingException e) {
+                        return badRequest(response, "invalid request body::" + e.getMessage());
+                    }
+                });
+            });
+
             if (additionalRoutes != null)
                 additionalRoutes.accept(routes);
         };

@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 class ClusterService {
     private final ClusterStarter clusterStarter;
     private final RedirectFunction redirectFunction;
-    private final ClusterGrpcClient client;
+    private final ClusterInternalClient client;
 
     final ClusterEvents clusterEvents = new ClusterEvents();
     private final CompositeDisposable disposables = new CompositeDisposable();
@@ -40,7 +40,7 @@ class ClusterService {
     private final Object setSharedObjectMutex = new Object();
     private final Object syncMutex = new Object();
 
-    ClusterService(ClusterStarter clusterStarter, RedirectFunction redirectFunction, ClusterGrpcClient client) {
+    ClusterService(ClusterStarter clusterStarter, RedirectFunction redirectFunction, ClusterInternalClient client) {
         this.clusterStarter = clusterStarter;
         this.redirectFunction = redirectFunction;
         this.client = client;

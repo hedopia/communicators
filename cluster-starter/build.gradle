@@ -5,9 +5,6 @@ dependencies {
     api 'com.fasterxml.jackson.core:jackson-databind:2.22.1'
     api 'com.google.guava:guava:33.6.0-jre'
     api 'io.github.openfeign:feign-core:13.13'
-    api 'io.grpc:grpc-netty-shaded:1.83.1'
-    api 'io.grpc:grpc-stub:1.83.1'
-    api 'io.grpc:grpc-api:1.83.1'
     api 'org.javatuples:javatuples:1.2'
     api 'org.slf4j:slf4j-api:2.0.18'
 }

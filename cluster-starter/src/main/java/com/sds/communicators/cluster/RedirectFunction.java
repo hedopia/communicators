@@ -23,7 +23,7 @@ class RedirectFunction {
     private final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newCachedThreadPool();
 
     private final Set<String> nodeTargetUrls;
-    private final ClusterGrpcClient client;
+    private final ClusterInternalClient client;
     private final ClusterStarter clusterStarter;
 
 

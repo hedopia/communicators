@@ -1,6 +1,6 @@
 # Communicators
 
-Communicators is a collection of device communication drivers and clustering libraries. It forms a cluster through direct node-to-node gRPC communication without an external coordinator, and collects or controls device data through industrial protocols such as TCP, UDP, Modbus TCP, HTTP, and OPC UA.
+Communicators is a collection of device communication drivers and clustering libraries. It forms a cluster through direct node-to-node HTTP communication without an external coordinator, and collects or controls device data through industrial protocols such as TCP, UDP, Modbus TCP, HTTP, and OPC UA.
 
 ## Modules
 
@@ -24,7 +24,7 @@ All Java modules currently use project version `3.8`.
 ### Module relationships
 
 - `common` contains the data model shared by every module.
-- `cluster-starter` uses Reactor Netty for the public HTTP API and gRPC for internal node communication. The default gRPC port is `serverPort + 10000`.
+- `cluster-starter` uses Reactor Netty for both the public HTTP API and internal node-to-node calls, which are served under `{clusterBasePath}/internal` on the same port.
 - `driver-starter` embeds `cluster-starter` and provides device load balancing and failover. Output implementations are available for no output, files, Kafka, and REST; applications can also extend `DriverStarter` to implement a custom output.
 - `driver-starter/ui` is a React and Vite application. Its production build is written to `driver-starter/src/main/resources/static`.
 - The `io-*` modules run Spring Boot WebFlux (web application type `reactive`), so Spring Boot owns the Reactor Netty HTTP server. The driver is started with `startWithoutHttpServer()`, and its cluster, driver, and web UI routes are contributed through a `NettyRouteProvider` bean; Spring Boot appends the WebFlux handler after those routes as a catch-all, so WebFlux endpoints can be added alongside them. Each module also replaces the auto-configured `ReactorResourceFactory` to give the server a 200-thread worker pool, because the driver routes block.
@@ -33,7 +33,6 @@ All Java modules currently use project version `3.8`.
 
 - Java 17 and a Gradle multi-project build
 - Reactor Netty for HTTP servers and clients
-- gRPC with Jackson-serialized payloads for internal node calls
 - Feign, Jackson, and RxJava 3
 - GraalPy 24.1.2 for Python 3 device scripts
 - DigitalPetri Modbus 2.1.6
@@ -83,7 +82,7 @@ For a multi-node cluster:
 
 1. Assign a unique `io.node-index` to every node.
 2. List all node HTTP URLs in `io.node-target-urls`.
-3. Allow both the HTTP port and the internal gRPC port (`server.port + grpc-port-offset`) through the firewall.
+3. Allow the HTTP port through the firewall; internal node-to-node traffic uses the same port.
 
 ## Documentation
 

@@ -728,7 +728,7 @@ The default base path is `/driver`.
 
 The four command endpoints accept an optional `initial-value` header. The command-ID endpoints accept a JSON string array; the command endpoints accept a JSON Command array.
 
-Follower-to-leader delegation and leader-to-node connection distribution use the internal `driver.DriverInternal` gRPC service on the cluster gRPC port.
+Follower-to-leader delegation and leader-to-node connection distribution use the internal routes under `{driverBasePath}/internal` on the node's HTTP port.
 
 ## Web UI
 

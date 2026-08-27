@@ -1,6 +1,8 @@
 package com.sds.communicators.cluster;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
@@ -14,7 +16,10 @@ import reactor.netty.http.server.HttpServerRoutes;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 @Slf4j
 class ClusterServerRoutes {
@@ -37,6 +42,153 @@ class ClusterServerRoutes {
     void apply(HttpServerRoutes routes) {
         redirect(routes);
         controller(routes);
+        internal(routes);
+    }
+
+    /**
+     * node-to-node communication, served on the same port as the public API.
+     * These routes are required for the cluster to work: a node that mounts
+     * {@link ClusterStarter#getRoutes()} on its own server must not filter them out.
+     */
+    private void internal(HttpServerRoutes routes) {
+        String base = clusterBasePath + ClusterInternalClient.INTERNAL_PATH;
+
+        routes.put(base + "/heartbeat", (request, response) -> {
+            log.trace(request.uri());
+            return body(request, ClusterInternalClient.HeartbeatRequest.class, response, heartbeat -> {
+                if (clusterStarter.nodeIndex != heartbeat.nodeIndex)
+                    clusterService.heartbeatReceived(heartbeat.nodeIndex, heartbeat.position, heartbeat.lastTransitionTime, heartbeat.sharedObjectSeq);
+                return ok(response);
+            });
+        });
+        routes.get(base + "/node-status", (request, response) -> {
+            log.trace(request.uri());
+            if (clusterStarter.isPrepared)
+                return ok(response, new NodeStatus(clusterStarter.nodeIndex, clusterStarter.position, clusterStarter.isActivated));
+            else
+                return badRequest(response, "application is not prepared, get status ignored");
+        });
+        routes.put(base + "/set-to-leader", (request, response) -> {
+            log.trace(request.uri());
+            if (clusterStarter.isPrepared) {
+                clusterService.transition(Position.LEADER);
+                return ok(response);
+            } else {
+                return badRequest(response, "application is not prepared, set to leader ignored");
+            }
+        });
+        routes.delete(base + "/cluster-deleted/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            if (clusterStarter.nodeIndex != nodeIndex)
+                clusterService.clusterDeleted(nodeIndex);
+            return ok(response);
+        });
+        routes.delete(base + "/remove-shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            if (clusterStarter.nodeIndex != nodeIndex)
+                clusterService.removeSharedObject(nodeIndex);
+            return ok(response);
+        });
+        routes.get(base + "/node-index", (request, response) -> {
+            log.trace(request.uri());
+            return ok(response, clusterStarter.nodeIndex);
+        });
+        routes.post(base + "/merge-shared-object-to-leader/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.MergeSharedObjectInfo.class, response, info -> {
+                var ret = clusterService.setSharedObjectToLeader(nodeIndex, info);
+                return ret == null ? ok(response) : badRequest(response, ret);
+            });
+        });
+        routes.post(base + "/delete-shared-object-to-leader/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.DeleteSharedObjectInfo.class, response, info -> {
+                var ret = clusterService.setSharedObjectToLeader(nodeIndex, info);
+                return ret == null ? ok(response) : badRequest(response, ret);
+            });
+        });
+        routes.post(base + "/check-merge-shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.MergeSharedObjectInfo.class, response, info ->
+                    ok(response, clusterStarter.nodeIndex != nodeIndex ? clusterService.checkSharedObject(nodeIndex, info) : true));
+        });
+        routes.post(base + "/check-delete-shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.DeleteSharedObjectInfo.class, response, info ->
+                    ok(response, clusterStarter.nodeIndex != nodeIndex ? clusterService.checkSharedObject(nodeIndex, info) : true));
+        });
+        routes.post(base + "/overwrite-shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.MergeSharedObjectInfo.class, response, info -> {
+                if (clusterStarter.nodeIndex != nodeIndex)
+                    clusterService.overwriteSharedObject(nodeIndex, info);
+                return ok(response);
+            });
+        });
+        routes.get(base + "/shared-object", (request, response) -> {
+            log.trace(request.uri());
+            return ok(response, new ClusterService.MergeSharedObjectInfo(
+                    clusterService.sharedObjectSeq.get(clusterStarter.nodeIndex),
+                    clusterService.sharedObject.get(clusterStarter.nodeIndex)));
+        });
+        routes.get(base + "/shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return ok(response, new ClusterService.MergeSharedObjectInfo(
+                    clusterService.sharedObjectSeq.get(nodeIndex),
+                    clusterService.sharedObject.get(nodeIndex)));
+        });
+        routes.post(base + "/sync-shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.SharedObject.class, response, sharedObject -> {
+                if (clusterStarter.nodeIndex != nodeIndex)
+                    clusterService.syncSharedObject(sharedObject);
+                return ok(response);
+            });
+        });
+        routes.post(base + "/check-shared-object-seq", (request, response) -> {
+            log.trace(request.uri());
+            return body(request, new TypeReference<Map<Integer, Long>>() {}, response, sharedObjectSeq -> {
+                var result = new HashSet<Integer>();
+                for (var nodeIndex : sharedObjectSeq.keySet()) {
+                    if (clusterStarter.nodeIndex != nodeIndex &&
+                            (!clusterService.sharedObjectSeq.containsKey(nodeIndex) ||
+                                    !clusterService.sharedObjectSeq.get(nodeIndex).equals(sharedObjectSeq.get(nodeIndex))))
+                        result.add(nodeIndex);
+                }
+                return ok(response, result);
+            });
+        });
+    }
+
+    /** reads and deserializes the request body, answering 400 when it cannot be parsed */
+    private <T> Mono<Void> body(HttpServerRequest request, Class<T> type, HttpServerResponse response, Function<T, Mono<Void>> handler) {
+        return body(request, objectMapper.constructType(type), response, handler);
+    }
+
+    private <T> Mono<Void> body(HttpServerRequest request, TypeReference<T> type, HttpServerResponse response, Function<T, Mono<Void>> handler) {
+        return body(request, objectMapper.getTypeFactory().constructType(type), response, handler);
+    }
+
+    private <T> Mono<Void> body(HttpServerRequest request, JavaType type, HttpServerResponse response, Function<T, Mono<Void>> handler) {
+        return requestBody(request).flatMap(payload -> {
+            T value;
+            try {
+                value = objectMapper.readValue(payload, type);
+            } catch (JsonProcessingException e) {
+                log.error("invalid internal request body ({})::{}", request.uri(), e.getMessage());
+                return badRequest(response, "invalid request body::" + e.getMessage());
+            }
+            return handler.apply(value);
+        });
     }
 
     private Mono<Void> ok(HttpServerResponse response) {

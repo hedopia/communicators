@@ -16,7 +16,6 @@ import feign.FeignException;
 import feign.Param;
 import feign.QueryMap;
 import feign.RequestLine;
-import io.grpc.StatusRuntimeException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
@@ -108,7 +107,7 @@ class DriverService {
                         ret.putAll(connectAll(deviceSet));
                 } else {
                     var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                                    ret.putAll(clusterStarter.grpcCall(targetUrl, DriverGrpc.CONNECT_ALL_TO_INDEX, deviceSet)),
+                                    ret.putAll(internalClient(targetUrl).connectAllToIndex(deviceSet)),
                             "connect all to node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(deviceSet));
                     if (result != null) {
                         log.error("connect all to node-index: {} failed, connect to leader, devices: {}", nodeIndex, UtilFunc.joinDeviceId(deviceSet), result);
@@ -120,7 +119,7 @@ class DriverService {
         } else {
             var ret = new HashMap<String, String>();
             clusterStarter.toLeaderFuncConfirmed(targetUrl ->
-                            ret.putAll(clusterStarter.grpcCall(targetUrl, DriverGrpc.CONNECT_ALL_TO_LEADER, new DriverGrpc.ConnectRequest(nodeIndex, devices))),
+                            ret.putAll(internalClient(targetUrl).connectAllToLeader(nodeIndex, devices)),
                     "connect all to leader for node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(devices));
             return ret;
         }
@@ -129,8 +128,6 @@ class DriverService {
     private String errorParser(Throwable e) {
         if (e instanceof FeignException && ((FeignException)e).responseBody().isPresent())
             return new String(((FeignException)e).responseBody().get().array(), StandardCharsets.UTF_8);
-        else if (e instanceof StatusRuntimeException && ((StatusRuntimeException) e).getStatus().getDescription() != null)
-            return ((StatusRuntimeException) e).getStatus().getDescription();
         else
             return e.getMessage();
     }
@@ -509,6 +506,19 @@ class DriverService {
                 "request command ids for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + commandIdList);
         if (result != null) throw result;
         return ret.get();
+    }
+
+    /** node-to-node calls, served by the internal routes in DriverServerRoutes */
+    private DriverInternalApi internalClient(String targetUrl) {
+        return clusterStarter.getClient(targetUrl + driverBasePath + DriverServerRoutes.INTERNAL_PATH, DriverInternalApi.class);
+    }
+
+    interface DriverInternalApi {
+        @RequestLine("POST /connect-all-to-index")
+        Map<String, String> connectAllToIndex(Set<Device> devices);
+
+        @RequestLine("POST /connect-all-to-leader/{nodeIndex}")
+        Map<String, String> connectAllToLeader(@Param("nodeIndex") int nodeIndex, Set<Device> devices);
     }
 
     private interface DriverClientApi {

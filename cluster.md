@@ -6,17 +6,15 @@
 - A node may be reachable through one or more network interfaces and URLs.
 - If the leader fails, the participating node with the lowest `nodeIndex` is elected.
 - Public REST endpoints and redirect proxying use Reactor Netty HTTP.
-- Internal node communication uses unary gRPC calls with Jackson-serialized payloads over plaintext connections.
+- Internal node communication uses HTTP calls with Jackson-serialized payloads, served on the same port as the public API.
 
 ## Architecture
 
 ```text
-ClusterStarter          Entry point and lifecycle owner for the HTTP and gRPC servers
-ClusterServerRoutes     Public cluster REST API and redirect proxy routes
+ClusterStarter          Entry point and lifecycle owner for the HTTP server
+ClusterServerRoutes     Public cluster REST API, redirect proxy, and internal node-to-node routes
 ClusterService          Leader/follower transitions, heartbeats, and shared-object synchronization
-ClusterGrpc             gRPC method descriptors and Jackson marshalling; no protobuf code generation
-ClusterGrpcService      Internal gRPC handlers
-ClusterGrpcClient       Cached gRPC channels and deadline-aware unary calls
+ClusterInternalClient   Typed client for the internal node-to-node routes
 ClusterClient           Generic Feign REST client and load-balanced client
 RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
 ClusterEvents           Event registration API
@@ -26,7 +24,7 @@ ClusterEvents           Event registration API
 
 1. During startup, the node temporarily serves `GET /index` on its configured HTTP port.
 2. It queries `nodeTargetUrls` and automatically identifies the URL that refers to itself. Startup fails if no local URL can be identified.
-3. The node starts an internal gRPC server on `serverPort + grpcPortOffset`.
+3. The node serves the internal node-to-node routes under `{clusterBasePath}/internal` on its HTTP port.
 4. After waiting up to `leaderLostTimeoutSeconds` for an existing leader, node `1` starts as leader when no leader is found; other nodes start as followers.
 5. Every node broadcasts a heartbeat containing its position and shared-object sequence at `heartbeatSendingIntervalMillis`.
 6. When the leader heartbeat is missing for `leaderLostTimeoutSeconds`, the active candidate with the lowest `nodeIndex` becomes the new leader.
@@ -34,7 +32,7 @@ ClusterEvents           Event registration API
 8. After a communication failure or split-brain recovery, the leader's state overwrites divergent follower state and emits the `overwritten` event.
 9. A partition without quorum is marked inactive.
 
-The internal gRPC port must be allowed through the firewall in addition to the public HTTP port.
+Only the HTTP port needs to be reachable between nodes; internal traffic shares it with the public API.
 
 ## Configuration
 
@@ -55,10 +53,8 @@ ClusterStarter.builder(nodeTargetUrls, serverPort, nodeIndex)
 | `clusterEvents` | Cluster event handlers | None |
 | `routes` | Additional Reactor Netty HTTP routes | None |
 | `clusterBasePath` | Base path for the cluster REST API | `/cluster` |
-| `connectTimeoutMillis` | REST and gRPC connection timeout | `1000` |
-| `readTimeoutMillis` | REST read timeout and gRPC deadline | `60000` |
-| `grpcPortOffset` | Offset added to `serverPort` for the internal gRPC listener | `10000` |
-| `grpcServices` | Additional `ServerServiceDefinition` instances registered with the internal server | None |
+| `connectTimeoutMillis` | Connection timeout for REST and internal calls | `1000` |
+| `readTimeoutMillis` | Read timeout for REST and internal calls | `60000` |
 
 ### Cluster events
 
@@ -107,7 +103,7 @@ var cluster = ClusterStarter.builder(
         .setReadTimeoutMillis(60000)
         .build();
 
-cluster.start();        // Starts the HTTP and gRPC servers.
+cluster.start();        // Starts the HTTP server.
 // cluster.start(100);  // Starts with a custom HTTP server thread-pool size.
 // cluster.dispose();   // Stops the cluster.
 ```
@@ -125,7 +121,8 @@ HttpServer.create()
         .bindNow();
 ```
 
-`startWithoutHttpServer()` still starts the internal gRPC server.
+`startWithoutHttpServer()` starts no server of its own, so the routes returned by `getRoutes()` must be mounted for
+the cluster to work: they carry the internal node-to-node API as well as the public one.
 
 Under Spring Boot WebFlux, contribute the routes with a `NettyRouteProvider` bean instead. Spring Boot
 applies every provider and then appends its own WebFlux handler as a catch-all, so WebFlux endpoints keep
@@ -181,11 +178,10 @@ cluster.toIndexFunc(nodeIndex, url -> { }, "action-name");
 cluster.toAllFunc(url -> { }, "action-name");
 cluster.parallelExecute(collection, item -> { });
 cluster.getClient(url, Api.class);
-cluster.grpcCall(url, methodDescriptor, request);
 cluster.loadBalancedClient(urls, Api.class, api -> { });
 ```
 
-`toLeaderFuncConfirmed` retries and may initiate an election. `getClient` creates a Feign client. `grpcCall` reuses the internal channel cache and configured deadline.
+`toLeaderFuncConfirmed` retries and may initiate an election. `getClient` creates a Feign client.
 
 ## REST API
 
@@ -220,15 +216,16 @@ The HTTP method, headers, query string, and body are preserved. For example:
 PUT /redirect-to-leader/driver/reconnect-all
 ```
 
-## Internal gRPC API
+## Internal node-to-node API
 
-Heartbeat, node status, leader changes, cluster deletion, and shared-object get/merge/delete/check/overwrite/sync/remove operations use gRPC rather than REST.
+Heartbeat, node status, leader changes, cluster deletion, and shared-object get/merge/delete/check/overwrite/sync/remove
+operations are served under `{clusterBasePath}/internal` on the node's own HTTP port.
 
-- Service: `cluster.ClusterInternal`
-- Call type: unary
-- Payload: Jackson JSON; no generated protobuf classes
-- Listener: `serverPort + grpcPortOffset`
-- Transport: plaintext
-- Client deadline: `readTimeoutMillis`
+- Payload: Jackson JSON
+- Timeouts: `connectTimeoutMillis` and `readTimeoutMillis`
+- Failure mapping: rejected preconditions answer `400` with a plain-text reason
 
-`driver-starter` embeds this module and registers its own internal driver service on the same gRPC server. See the [driver guide](driver.md).
+These routes are part of `getRoutes()`. They are reachable by anything that can reach the HTTP port, so restrict that
+port to the cluster network if the deployment is not otherwise isolated.
+
+`driver-starter` embeds this module and adds its own internal routes under `{driverBasePath}/internal`. See the [driver guide](driver.md).
