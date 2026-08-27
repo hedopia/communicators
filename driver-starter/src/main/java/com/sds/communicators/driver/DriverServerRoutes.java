@@ -28,14 +28,15 @@ import java.util.stream.Collectors;
 class DriverServerRoutes {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    static Consumer<HttpServerRoutes> getDriverServerRoutes(DriverStarter driverStarter, DriverService driverService, String driverBasePath, Consumer<HttpServerRoutes> additionalRoutes) throws IOException {
+    static Consumer<HttpServerRoutes> getDriverServerRoutes(DriverStarter driverStarter, DriverService driverService, String driverBasePath, String clusterBasePath, Consumer<HttpServerRoutes> additionalRoutes) throws IOException {
         String template;
         try (InputStream in = DriverServerRoutes.class.getClassLoader().getResourceAsStream("static/index.html")) {
             if (in == null)
                 throw new IOException("static/index.html not found in classpath");
             template = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
-        var html = template.replace("__APP_BASE_PATH__", driverBasePath);
+        var html = template.replace("__APP_BASE_PATH__", driverBasePath)
+                .replace("__CLUSTER_BASE_PATH__", clusterBasePath);
         return routes -> {
             routes.get(driverBasePath + "/assets/{path}", (request, response) -> {
                 log.trace(request.uri());
@@ -53,6 +54,16 @@ class DriverServerRoutes {
                 return response.header(HttpHeaderNames.CONTENT_TYPE, contentType(path))
                         .sendByteArray(Mono.just(bytes))
                         .then();
+            });
+            // the UI html references assets relatively (vite base "./"), so it must be served
+            // from the trailing-slash path only; canonicalize {driverBasePath} to {driverBasePath}/
+            routes.get(driverBasePath, (request, response) -> {
+                log.trace(request.uri());
+                String uri = request.uri();
+                int query = uri.indexOf('?');
+                return response.status(301)
+                        .header(HttpHeaderNames.LOCATION, driverBasePath + "/" + (query < 0 ? "" : uri.substring(query)))
+                        .send();
             });
             routes.get(driverBasePath + "/", (request, response) -> {
                 log.trace(request.uri());

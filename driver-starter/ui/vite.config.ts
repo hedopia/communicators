@@ -11,7 +11,9 @@ export default defineConfig(({ mode }) => ({
       name: "html-transform",
       transformIndexHtml(html) {
         if (mode === "development") {
-          return html.replace("__APP_BASE_PATH__", "/driver");
+          return html
+            .replace("__APP_BASE_PATH__", "/driver")
+            .replace("__CLUSTER_BASE_PATH__", "/cluster");
         }
         return html;
       },

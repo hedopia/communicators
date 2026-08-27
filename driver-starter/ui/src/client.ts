@@ -1,12 +1,12 @@
 import axios from "axios";
 
-const { appBasePath } = window.APP_CONFIG;
+const { appBasePath, clusterBasePath: injectedClusterBasePath } = window.APP_CONFIG;
 
 /** driver REST API base path (e.g. "/driver"), injected by the server into index.html */
 export const driverBasePath = appBasePath;
 
-/** cluster REST API base path (ClusterStarter default) */
-export const clusterBasePath = "/cluster";
+/** cluster REST API base path (e.g. "/cluster"), injected by the server into index.html */
+export const clusterBasePath = injectedClusterBasePath;
 
 /** axios instance for driver REST API ({driverBasePath}/...) */
 export const api = axios.create({

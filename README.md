@@ -27,7 +27,7 @@ All Java modules currently use project version `3.8`.
 - `cluster-starter` uses Reactor Netty for the public HTTP API and gRPC for internal node communication. The default gRPC port is `serverPort + 10000`.
 - `driver-starter` embeds `cluster-starter` and provides device load balancing and failover. Output implementations are available for no output, files, Kafka, and REST; applications can also extend `DriverStarter` to implement a custom output.
 - `driver-starter/ui` is a React and Vite application. Its production build is written to `driver-starter/src/main/resources/static`.
-- The `io-*` modules use Spring Boot as a configuration and process container. Their Spring web application type is `none`; the HTTP server is owned by `driver-starter`.
+- The `io-*` modules use Spring Boot as a configuration and process container. Their Spring web application type is `none`; each module creates and owns its own Reactor Netty HTTP server, binding the cluster and driver routes from `driverStarter.getRoutes()` after starting the driver with `startWithoutHttpServer()`.
 
 ## Technology stack
 

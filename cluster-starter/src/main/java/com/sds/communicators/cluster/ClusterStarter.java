@@ -112,6 +112,10 @@ public class ClusterStarter {
             return this;
         }
 
+        public String getClusterBasePath() {
+            return clusterBasePath;
+        }
+
         public ClusterStarter.Builder setConnectTimeoutMillis(int connectTimeoutMillis) {
             this.connectTimeoutMillis = connectTimeoutMillis;
             return this;
