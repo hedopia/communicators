@@ -1,6 +1,6 @@
 spring:
   main:
-    web-application-type: none
+    web-application-type: reactive
     keep-alive: true
   application:
     name: IO-${io.driver-id}

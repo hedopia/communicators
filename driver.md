@@ -45,7 +45,7 @@ Each Device owns one `DriverProtocol` instance and one Python context. Script gl
 - Netty 4.2.17.Final, aligned through the Netty BOM
 - `netty-channel-fsm` 1.0.2, shared by Milo 1.1.6 and Modbus 2.1.6
 
-Both Gradle and Maven declarations use Milo 1.1.6. The OPC UA implementation uses the Milo 1.1 endpoint, certificate, namespace, monitored-item, and subscription APIs.
+The OPC UA implementation uses the Milo 1.1 endpoint, certificate, namespace, monitored-item, and subscription APIs.
 
 ## Driver configuration
 

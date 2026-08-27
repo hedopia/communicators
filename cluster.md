@@ -127,6 +127,23 @@ HttpServer.create()
 
 `startWithoutHttpServer()` still starts the internal gRPC server.
 
+Under Spring Boot WebFlux, contribute the routes with a `NettyRouteProvider` bean instead. Spring Boot
+applies every provider and then appends its own WebFlux handler as a catch-all, so WebFlux endpoints keep
+working alongside the cluster routes (this is how the `io-*` modules are wired):
+
+```java
+@Bean
+NettyRouteProvider clusterRoutes(ClusterStarter cluster) {
+    return routes -> {
+        cluster.getRoutes().accept(routes);
+        return routes;
+    };
+}
+```
+
+Do not call `route(...)` from a `NettyServerCustomizer` / `WebServerFactoryCustomizer`: those routes take
+over the connection and answer every unmatched path with a bare 404, so Spring's own handler never runs.
+
 ## Main Java API
 
 ### Shared objects

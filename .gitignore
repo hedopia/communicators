@@ -1,6 +1,18 @@
+# build output
 target/
+build/
+out/
+.gradle
 !**/src/main/**
 !**/src/test/**
+
+# gradle wrapper (each developer supplies their own gradle installation)
+/gradle/
+/gradlew
+/gradlew.bat
+
+# runtime state (OPC UA certificate stores, written next to the working directory)
+pki/
 
 .idea
 *.iws

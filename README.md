@@ -27,7 +27,7 @@ All Java modules currently use project version `3.8`.
 - `cluster-starter` uses Reactor Netty for the public HTTP API and gRPC for internal node communication. The default gRPC port is `serverPort + 10000`.
 - `driver-starter` embeds `cluster-starter` and provides device load balancing and failover. Output implementations are available for no output, files, Kafka, and REST; applications can also extend `DriverStarter` to implement a custom output.
 - `driver-starter/ui` is a React and Vite application. Its production build is written to `driver-starter/src/main/resources/static`.
-- The `io-*` modules use Spring Boot as a configuration and process container. Their Spring web application type is `none`; each module creates and owns its own Reactor Netty HTTP server, binding the cluster and driver routes from `driverStarter.getRoutes()` after starting the driver with `startWithoutHttpServer()`.
+- The `io-*` modules run Spring Boot WebFlux (web application type `reactive`), so Spring Boot owns the Reactor Netty HTTP server. The driver is started with `startWithoutHttpServer()`, and its cluster, driver, and web UI routes are contributed through a `NettyRouteProvider` bean; Spring Boot appends the WebFlux handler after those routes as a catch-all, so WebFlux endpoints can be added alongside them. Each module also replaces the auto-configured `ReactorResourceFactory` to give the server a 200-thread worker pool, because the driver routes block.
 
 ## Technology stack
 
@@ -41,34 +41,29 @@ All Java modules currently use project version `3.8`.
 - Kafka clients and Spring Boot in the executable example modules
 - React 19, TypeScript, Axios, and Vite for the management UI
 
-The Gradle build is authoritative. Maven POM files are retained for consumers and reference builds.
+Gradle is the only build system; there are no Maven POM files.
 
 ## Build
 
-JDK 17 is required. Run the build from the repository root; Gradle resolves module order automatically.
+JDK 17 is required. The Gradle wrapper is not committed, so build with a local Gradle 9 installation (verified with 9.7.0). In IntelliJ IDEA, open Settings -> Build, Execution, Deployment -> Build Tools -> Gradle and set Distribution to `Specific Version` so the IDE downloads one.
 
-Windows:
-
-```powershell
-.\gradlew.bat build
-.\gradlew.bat build -x test
-```
-
-Linux or macOS:
+Run the build from the repository root; Gradle resolves module order automatically.
 
 ```bash
-./gradlew build
-./gradlew build -x test
+gradle build
+gradle build -x test
 ```
 
 Useful module-specific commands:
 
 ```text
-gradlew :driver-starter:build
-gradlew :io-kafka:bootJar
+gradle :driver-starter:build
+gradle :io-kafka:bootJar
 ```
 
-Build artifacts are written to each module's `build/libs` directory. The `io-db`, `io-kafka`, and `io-none` modules produce executable Spring Boot JARs.
+Build artifacts are written to each module's `build/libs` directory. The `io-db`, `io-kafka`, and `io-none` modules produce executable Spring Boot JARs (`<module>-3.8.jar`) next to a non-executable `<module>-3.8-plain.jar`.
+
+The management UI is committed in built form under `driver-starter/src/main/resources/static`, so a Gradle build alone is enough. Rebuild it with `npm run build` in `driver-starter/ui` only after changing the UI sources.
 
 ## Run an example application
 
