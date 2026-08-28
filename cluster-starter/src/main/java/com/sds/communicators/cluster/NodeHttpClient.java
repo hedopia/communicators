@@ -20,9 +20,6 @@ import java.util.Map;
  * HTTP/1.1 {@code Upgrade}. The upgrade happens once per connection; later calls are multiplexed
  * streams on it, so concurrency no longer costs connections. A node that still speaks only
  * HTTP/1.1 answers without upgrading and this client falls back, keeping rolling deploys working.
- * <p>
- * One instance is shared by the cluster and driver node-to-node calls so that both use the same
- * connection per peer.
  */
 public final class NodeHttpClient {
     private final HttpClient httpClient;
@@ -49,12 +46,7 @@ public final class NodeHttpClient {
         return call(uri, method, body, responseType, Map.of());
     }
 
-    /**
-     * Sends one request. A non-2xx answer becomes an exception carrying the response body, which
-     * is how the routes report a rejected precondition; callers already treat that as a failure.
-     *
-     * @param responseType {@code null} when the response body should be ignored
-     */
+    /** a non-2xx answer becomes an exception carrying the response body; responseType null ignores the body */
     public <T> T call(String uri, String method, Object body, JavaType responseType, Map<String, String> headers) {
         HttpRequest request;
         try {

@@ -15,52 +15,23 @@ import java.util.Set;
 @EqualsAndHashCode(of = "id")
 @ToString
 public class Device {
-    /**
-     * Key
-     */
     private String id;
-    /**
-     * device group
-     */
     private String group = "";
-    /**
-     * response timeout [sec] (0 or negative means infinite timeout)
-     */
+    /** response timeout [sec] (0 or negative means infinite timeout) */
     private int responseTimeout = 0;
-    /**
-     * number of maximum retry to connect after connection failed (negative means retry to connect infinitely)
-     */
+    /** maximum connect retries after connection failed (negative means retry infinitely) */
     private int maxRetryConnect = 5;
-    /**
-     * delay time after connection failed to retry connect [ms]
-     */
+    /** delay before retrying to connect after connection failed [ms] */
     private int retryConnectDelay = 5000;
-    /**
-     * socket timeout [ms]
-     */
+    /** socket timeout [ms] */
     private int socketTimeout = 5000;
-    /**
-     * delay after connected to execute commands [ms]
-     */
+    /** delay after connected to execute commands [ms] */
     private int initialCommandDelay = 5000;
-    /**
-     * connection URL
-     */
     private String connectionUrl = "tcp-client://127.0.0.1:5000";
-    /**
-     * protocol script
-     */
     private String protocolScript = "";
-    /**
-     * command set
-     */
     private Set<Command> commands = new HashSet<>();
-    /**
-     * connect when request command
-     */
+    /** connect only while a command is requested */
     private boolean connectionCommand = false;
-    /**
-     * data used in script
-     */
+    /** data used in script */
     private Map<String, Object> data = new HashMap<>();
 }

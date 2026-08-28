@@ -345,12 +345,6 @@ class DriverCommand {
         return ret;
     }
 
-    /**
-     * get response of requested command
-     *
-     * @param command command
-     * @return response list
-     */
     private List<Response> getCommandResponse(Command command, CommandFunctions cmdFunctions, Value[] received, Long receivedTime, Value initialValue, Object nonPeriodicObject) throws Exception {
         if (received != null && receivedTime != null && command.getType() == CommandType.READ_REQUEST)
             return processCommandFunction(received, cmdFunctions.commandFunction, receivedTime, initialValue);

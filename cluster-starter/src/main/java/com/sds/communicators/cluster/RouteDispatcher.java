@@ -18,13 +18,10 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * Runs route handlers on their own worker thread instead of on a Reactor Netty event loop.
- * <p>
- * The cluster and driver handlers are blocking by design: they wait on cluster redirects,
- * device connect/disconnect and shared-object fan-out. Executed on an event loop they would
- * stall every other request on that loop, including inbound heartbeats. Dispatching each
- * request to its own worker thread gives the thread-per-request model of a servlet container
- * without a fixed pool size, and leaves the event loops free for I/O.
+ * Runs route handlers on their own worker thread instead of on a Reactor Netty event loop:
+ * the cluster and driver handlers are blocking (cluster redirects, device connect/disconnect,
+ * shared-object fan-out) and on an event loop they would stall every other request on that
+ * loop, including inbound heartbeats.
  */
 public final class RouteDispatcher {
     /**
@@ -47,7 +44,6 @@ public final class RouteDispatcher {
     private RouteDispatcher() {}
 
     /**
-     * Wraps {@code routes} so that every handler registered afterwards runs on a worker thread.
      * All the verb helpers ({@code get}, {@code post}, ...) delegate to
      * {@link HttpServerRoutes#route}, so wrapping that one method covers every registration.
      */

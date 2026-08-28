@@ -292,7 +292,7 @@ class DriverServerRoutes {
     }
 
     private static Mono<String> requestBody(HttpServerRequest request) {
-        // the body arrives on an event loop; continue the (blocking) handler on a virtual thread
+        // the body arrives on an event loop; continue the (blocking) handler on a worker thread
         return RouteDispatcher.continueOnWorker(
                 request.receive().aggregate().asString(StandardCharsets.UTF_8).defaultIfEmpty(""));
     }

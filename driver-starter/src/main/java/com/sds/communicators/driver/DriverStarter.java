@@ -20,14 +20,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public abstract class DriverStarter {
-    /**
-     * driver id
-     */
     private final String driverId;
-
-    /**
-     * load balancing mode
-     */
     final boolean loadBalancing;
     final String defaultScript;
     final ObjectMapper objectMapper = new ObjectMapper();

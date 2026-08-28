@@ -46,8 +46,7 @@ public class IoConfiguration {
                 .setLoadBalancing(loadBalancing)
                 .setDriverBasePath(driverBasePath)
                 .build();
-        // the http server is owned by Spring Boot (routes are contributed by the
-        // driverRouteProvider bean below); this still starts the node-to-node gRPC server
+        // the http server is owned by Spring Boot (routes are contributed by the driverRouteProvider bean below)
         driverStarter.startWithoutHttpServer();
         return driverStarter;
     }

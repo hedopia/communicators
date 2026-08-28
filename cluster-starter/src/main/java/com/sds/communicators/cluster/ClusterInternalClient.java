@@ -9,16 +9,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * HTTP client for cluster internal node-to-node communication.
- * Calls go to {@code {nodeUrl}{clusterBasePath}/internal/...} on the node's regular
- * HTTP server, so internal traffic shares the port and thread pool of the public API.
- * <p>
- * The JDK client is configured for HTTP/2, which over plaintext {@code http://} means h2c
- * negotiated with an HTTP/1.1 {@code Upgrade}. The upgrade happens once per connection; every
- * later request to that node is a multiplexed stream on the same connection, so the heartbeat
- * and shared-object fan-out no longer need a connection each. A node that only speaks HTTP/1.1
- * (an older build during a rolling deploy) simply answers without upgrading and this client
- * falls back, which prior-knowledge h2c could not do.
+ * Typed client for {@code {nodeUrl}{clusterBasePath}/internal/...}, served on the node's
+ * regular HTTP server so internal traffic shares the port of the public API.
  */
 class ClusterInternalClient {
     static final String INTERNAL_PATH = "/internal";
@@ -100,7 +92,6 @@ class ClusterInternalClient {
         return client.call(url + basePath + path, method, body, responseType);
     }
 
-    /** heartbeat payload; sent as a single JSON body instead of path segments */
     static class HeartbeatRequest {
         public int nodeIndex;
         public Position position;

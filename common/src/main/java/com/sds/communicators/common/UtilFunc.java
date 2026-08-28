@@ -59,9 +59,6 @@ public class UtilFunc {
      * extract ip and port for ipv4 or ipv6
      * [example] ipv4: "0.0.0.0:8080"       -> ["0.0.0.0", "8080"]
      *           ipv6: "[ff:ff:ff:ff]:8080" -> ["ff:ff:ff:ff", "8080"]
-     *
-     * @param notation ip and port
-     * @return ip, port array
      */
     public static String[] extractIpPort(String notation) {
         int index;
@@ -78,10 +75,6 @@ public class UtilFunc {
     /**
      * string split, if delimiter is used for string, escape with '\'
      * [example] str = "a\,b,cd\,,e" delimiter = "," -> {a,b},{cd,},{e}
-     *
-     * @param str input string
-     * @param delimiter split delimiter
-     * @return spliced string
      */
     public static List<String> stringSplit(String str, String delimiter) {
         List<String> ret = new ArrayList<>();
@@ -101,13 +94,7 @@ public class UtilFunc {
         return ret;
     }
 
-    /**
-     * value * 10^decimalPlace
-     *
-     * @param value input value
-     * @param decimalPlace decimal place
-     * @return decimal place applied value
-     */
+    /** value * 10^decimalPlace */
     public static String getDecimalPlaced(String value, int decimalPlace) {
         StringBuilder str = new StringBuilder(value.replaceAll("\\s", "").toUpperCase());
         int dp = decimalPlace;
@@ -126,14 +113,12 @@ public class UtilFunc {
             }
         }
 
-        //negative check
         boolean isNegative = false;
         if (str.charAt(0) == '-') {
             isNegative = true;
             str = new StringBuilder(str.substring(1));
         }
 
-        // find dot position
         int idx = str.toString().indexOf('.');
         if (idx != -1)
             str = new StringBuilder(str.substring(0, idx) + str.substring(idx + 1));
@@ -142,7 +127,6 @@ public class UtilFunc {
 
         idx += dp;
 
-        //move dot
         boolean hasDot = true;
         int length = str.length();
         if (idx <= 0) {
@@ -157,7 +141,6 @@ public class UtilFunc {
             str = new StringBuilder(str.substring(0, idx) + "." + str.substring(idx));
         }
 
-        //remove zeros
         int sidx = 0, eidx = str.length() - 1;
         for (; sidx < str.length(); sidx++) {
             if (str.charAt(sidx) != '0') {
@@ -177,7 +160,6 @@ public class UtilFunc {
         else
             str = new StringBuilder(str.substring(sidx, eidx + 1));
 
-        //add minus symbol
         if (!str.toString().equals("0") && isNegative)
             str.insert(0, '-');
 
@@ -201,12 +183,6 @@ public class UtilFunc {
     /**
      * find all indexes of pattern array from source array
      * KMP algorithm used
-     *
-     * @param source array source
-     * @param pattern array pattern to find
-     * @param reverse reverse order if true
-     * @param stopAtFirst stop finding when found first pattern if true
-     * @return indexes of found pattern
      */
     public static <T> List<Integer> findArrayPattern(T[] source, T[] pattern, boolean reverse, boolean stopAtFirst) {
         List<Integer> ret = new ArrayList<>();
@@ -329,12 +305,7 @@ public class UtilFunc {
         return ret;
     }
 
-    /**
-     * convert string with ("\x00", "\r", "\n", "\t", "\\") to byte array
-     *
-     * @param data input string
-     * @return processed byte array
-     */
+    /** convert string with ("\x00", "\r", "\n", "\t", "\\") escapes to byte array */
     public static byte[] stringToByteArray(String data) {
         if (data == null || data.isEmpty())
             return null;

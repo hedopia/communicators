@@ -53,7 +53,6 @@ class PythonEngine {
         return context.asValue(obj);
     }
 
-    /** create python list, copying elements from a java array or list */
     Value toPyList(Object arrayOrList) {
         // cast to Object prevents object arrays from being spread as varargs
         return listConstructor.execute(arrayOrList);

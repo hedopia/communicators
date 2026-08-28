@@ -179,7 +179,6 @@ class ClusterServerRoutes {
         });
     }
 
-    /** reads and deserializes the request body, answering 400 when it cannot be parsed */
     private <T> Mono<Void> body(HttpServerRequest request, Class<T> type, HttpServerResponse response, Function<T, Mono<Void>> handler) {
         return body(request, objectMapper.constructType(type), response, handler);
     }
@@ -231,7 +230,7 @@ class ClusterServerRoutes {
     }
 
     private Mono<String> requestBody(HttpServerRequest request) {
-        // the body arrives on an event loop; continue the (blocking) handler on a virtual thread
+        // the body arrives on an event loop; continue the (blocking) handler on a worker thread
         return RouteDispatcher.continueOnWorker(
                 request.receive().aggregate().asString(StandardCharsets.UTF_8).defaultIfEmpty(""));
     }

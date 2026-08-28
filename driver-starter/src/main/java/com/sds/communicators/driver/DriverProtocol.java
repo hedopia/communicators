@@ -148,12 +148,6 @@ public abstract class DriverProtocol {
         }
     }
 
-    /**
-     * status changed
-     *
-     * @param s changed status
-     * @param issuedTime status issued time
-     */
     private void statusChanged(StatusCode s, ZonedDateTime issuedTime) {
         log.info("[{}] status changed: {} -> {}", deviceId, status, s);
         status = s;
@@ -166,9 +160,6 @@ public abstract class DriverProtocol {
         }
     }
 
-    /**
-     * send response data
-     */
     private void sendResponse(List<Response> responses) {
         if (responses.isEmpty())
             return;
@@ -183,9 +174,6 @@ public abstract class DriverProtocol {
         }
     }
 
-    /**
-     * initialize response channel
-     */
     private void initResponse() {
         disposables.add(
                 device.getResponseTimeout() > 0 ?
@@ -214,9 +202,6 @@ public abstract class DriverProtocol {
         disposables.add(Schedulers.io().scheduleDirect(() -> changeStatus(desiredStatus)));
     }
 
-    /**
-     * try to disconnect
-     */
     private String disconnect() {
         disposables.clear();
         try {
@@ -474,32 +459,11 @@ public abstract class DriverProtocol {
         }
     }
 
-    /**
-     * initialize instance
-     */
     abstract void initialize(String connectionInfo, Map<String, String> option) throws Exception;
 
-    /**
-     * request connect to equip
-     */
     abstract void requestConnect() throws Exception;
 
-    /**
-     * request disconnect
-     */
     abstract void requestDisconnect() throws Exception;
 
-    /**
-     * request command
-     *
-     * @param cmdId command id
-     * @param requestInfo request info
-     * @param timeout request timeout
-     * @param isReadCommand which read-command
-     * @param function command function
-     * @param initialValue initial-value for execute/request-command function
-     * @param nonPeriodicObject object for non-periodic commands
-     * @return response
-     */
     abstract List<Response> requestCommand(String cmdId, String requestInfo, int timeout, boolean isReadCommand, Value function, Value initialValue, Object nonPeriodicObject) throws Exception;
 }

@@ -59,11 +59,6 @@ class DriverService {
         }
     }
 
-    /**
-     * send response data to output
-     *
-     * @param responses response list
-     */
     void sendResponse(List<Response> responses) throws Exception {
         for (Response response : responses)
             responseMap.compute(response.getDeviceId(), (k, v) -> v == null ? new ConcurrentHashMap<>() : v)
@@ -71,11 +66,6 @@ class DriverService {
         driverStarter.sendResponse(responses, driverStarter.getDriverId(), clusterStarter.getNodeIndex());
     }
 
-    /**
-     * send device status to output
-     *
-     * @param deviceStatus device status
-     */
     void sendStatus(Status deviceStatus) throws Exception {
         driverStarter.sendStatus(deviceStatus, driverStarter.getDriverId(), clusterStarter.getNodeIndex());
     }
@@ -129,11 +119,6 @@ class DriverService {
         return e.getMessage();
     }
 
-    /**
-     * connect all device set
-     *
-     * @param devices device set
-     */
     Map<String, String> connectAll(Set<Device> devices) {
         log.info("try to connect all: {}", UtilFunc.joinDeviceId(devices));
         if (devices.isEmpty())
@@ -164,11 +149,6 @@ class DriverService {
         }
     }
 
-    /**
-     * connect device
-     *
-     * @param protocol protocol
-     */
     private String connect(DriverProtocol protocol) {
         log.trace("[{}] try to connect...", protocol.deviceId);
         driverProtocols.put(protocol.deviceId, protocol);
@@ -177,11 +157,6 @@ class DriverService {
         return Objects.requireNonNullElse(ret, "connected");
     }
 
-    /**
-     * disconnect device
-     *
-     * @param deviceId device id
-     */
     private String disconnect(String deviceId) {
         log.trace("[{}] try to disconnect...", deviceId);
         if (!driverProtocols.containsKey(deviceId)) {
@@ -298,11 +273,6 @@ class DriverService {
         }
     }
 
-    /**
-     * connect all device set with load balancing option
-     *
-     * @param devices device set
-     */
     Object balancedConnectAll(Set<Device> devices) {
         if (devices.isEmpty()) return new HashMap<>();
         log.info("try to balanced connect all: {}", UtilFunc.joinDeviceId(devices));

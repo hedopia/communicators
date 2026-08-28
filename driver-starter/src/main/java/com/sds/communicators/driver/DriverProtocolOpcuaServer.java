@@ -238,7 +238,6 @@ public class DriverProtocolOpcuaServer extends DriverProtocolOpcua {
                     Identifiers.ObjectsFolder.expanded(),
                     false));
 
-            // initial nodes from device data
             for (var entry : device.getData().entrySet()) {
                 try {
                     writeNode(entry.getKey(), javaToVariant(entry.getValue(), null));

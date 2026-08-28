@@ -29,10 +29,6 @@ public class ClusterStarter {
     private final ClusterService clusterService;
     private final ClusterServerRoutes clusterServerRoutes;
     private final java.util.function.Consumer<HttpServerRoutes> additionalRoutes;
-    /**
-     * -- GETTER --
-     * shared node-to-node HTTP/2 client, so starters built on this one reuse its connections
-     */
     @Getter
     private final NodeHttpClient nodeHttpClient;
     private final ClusterInternalClient internalClient;
@@ -76,16 +72,8 @@ public class ClusterStarter {
         private java.util.function.Consumer<HttpServerRoutes> routes;
         @Getter
         private String clusterBasePath;
-        /**
-         * -- GETTER --
-         * connect timeout configured so far, for starters that create their own HTTP clients
-         */
         @Getter
         private int connectTimeoutMillis;
-        /**
-         * -- GETTER --
-         * read timeout configured so far, for starters that create their own HTTP clients
-         */
         @Getter
         private int readTimeoutMillis;
 
@@ -265,10 +253,6 @@ public class ClusterStarter {
         }
     }
 
-    /**
-     * Starts the HTTP server on Reactor Netty's default event loops. They only carry I/O:
-     * every route handler is dispatched to its own worker thread by {@link RouteDispatcher}.
-     */
     public void start() throws Throwable {
         if (!isStarted) {
             isStarted = true;
