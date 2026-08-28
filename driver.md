@@ -25,13 +25,16 @@ DriverStarter (abstract)          Entry point; embeds ClusterStarter
 DriverService                     Connect, disconnect, load balancing, and response state
 DriverServerRoutes                REST API and Web UI routes
 DriverCommand                     Command scheduler and execution engine
-PythonEngine                      GraalPy context wrapper
 DriverProtocol                    Shared protocol lifecycle and reconnect behavior
  +-- TCP / UDP client and server
  +-- Modbus TCP client and server
  +-- HTTP client and server
  +-- OPC UA client and server
  +-- Dummy
+
+support/PythonEngine              GraalPy context wrapper
+support/ModbusTcpSocketTransport  Plain-socket Modbus/TCP client transport
+support/OpcuaSecurityStore        OPC UA application identity and PKI trust store
 ```
 
 Each Device owns one `DriverProtocol` instance and one Python context. Script globals are therefore isolated per Device. Responses and status changes reach the selected output through `sendResponse` and `sendStatus`.

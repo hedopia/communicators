@@ -6,21 +6,20 @@
 - A node may be reachable through one or more network interfaces and URLs.
 - If the leader fails, the participating node with the lowest `nodeIndex` is elected.
 - Public REST endpoints and redirect proxying use Reactor Netty HTTP.
-- Internal node communication uses HTTP calls with Jackson-serialized payloads, served on the same port as the public API.
-- Internal node-to-node calls go through one shared JDK `HttpClient` (HTTP/1.1 with keep-alive pooling) on the node's regular HTTP port.
+- Internal node communication uses HTTP calls with Jackson-serialized payloads through one shared JDK `HttpClient` (HTTP/1.1 with keep-alive pooling), served on the same port as the public API.
 - Route handlers are blocking and run on a per-request worker thread, so event loops stay free for I/O.
 
 ## Architecture
 
 ```text
-ClusterStarter          Entry point and lifecycle owner for the HTTP server
-ClusterServerRoutes     Public cluster REST API, redirect proxy, and internal node-to-node routes
-ClusterService          Leader/follower transitions, heartbeats, and shared-object synchronization
-NodeHttpClient          Shared JDK HttpClient for all node-to-node calls
-ClusterInternalClient   Typed client for the internal node-to-node routes
-RouteDispatcher         Runs each request's handler on its own worker thread
-RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
-ClusterEvents           Event registration API
+ClusterStarter                  Entry point and lifecycle owner for the HTTP server
+ClusterServerRoutes             Public cluster REST API, redirect proxy, and internal node-to-node routes
+ClusterService                  Leader/follower transitions, heartbeats, and shared-object synchronization
+ClusterInternalClient           Typed client for the internal node-to-node routes
+ClusterEvents                   Event registration API
+support/NodeHttpClient          Shared JDK HttpClient for all node-to-node calls
+support/RouteDispatcher         Runs each request's handler on its own worker thread
+support/RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
 ```
 
 ## Runtime behavior
