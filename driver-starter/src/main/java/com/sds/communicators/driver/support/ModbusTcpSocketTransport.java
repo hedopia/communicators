@@ -1,4 +1,4 @@
-package com.sds.communicators.driver;
+package com.sds.communicators.driver.support;
 
 import com.digitalpetri.modbus.MbapHeader;
 import com.digitalpetri.modbus.ModbusTcpFrame;
@@ -22,7 +22,7 @@ import java.util.function.Consumer;
  * delegating it to the fsm-based default transport.
  */
 @Slf4j
-class ModbusTcpSocketTransport implements ModbusTcpClientTransport {
+public class ModbusTcpSocketTransport implements ModbusTcpClientTransport {
     private static final int MBAP_HEADER_LENGTH = 7;
 
     private final String hostname;
@@ -32,7 +32,7 @@ class ModbusTcpSocketTransport implements ModbusTcpClientTransport {
 
     private Socket socket = null;
 
-    ModbusTcpSocketTransport(String hostname, int port, int connectTimeoutMillis) {
+    public ModbusTcpSocketTransport(String hostname, int port, int connectTimeoutMillis) {
         this.hostname = hostname;
         this.port = port;
         this.connectTimeoutMillis = connectTimeoutMillis;

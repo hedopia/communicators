@@ -1,4 +1,4 @@
-package com.sds.communicators.cluster;
+package com.sds.communicators.cluster.support;
 
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;

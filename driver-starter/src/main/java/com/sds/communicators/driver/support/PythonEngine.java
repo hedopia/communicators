@@ -1,4 +1,4 @@
-package com.sds.communicators.driver;
+package com.sds.communicators.driver.support;
 
 import lombok.extern.slf4j.Slf4j;
 import org.graalvm.polyglot.Context;
@@ -12,7 +12,7 @@ import java.util.function.BiConsumer;
  * one context per device (DriverCommand), GraalPy serializes multi-threaded access with its GIL
  */
 @Slf4j
-class PythonEngine {
+public class PythonEngine {
     private static final Engine SHARED_ENGINE = Engine.newBuilder()
             .option("engine.WarnInterpreterOnly", "false")
             .build();
@@ -23,7 +23,7 @@ class PythonEngine {
     private final Value dictConstructor;
     private final Value jsonLoads;
 
-    PythonEngine() {
+    public PythonEngine() {
         context = Context.newBuilder("python")
                 .engine(SHARED_ENGINE)
                 .allowAllAccess(true)
@@ -37,37 +37,37 @@ class PythonEngine {
         jsonLoads = bindings.getMember("__json_loads__");
     }
 
-    void exec(String script) {
+    public void exec(String script) {
         context.eval("python", script);
     }
 
-    Value get(String name) {
+    public Value get(String name) {
         return bindings.getMember(name);
     }
 
-    void set(String name, Object value) {
+    public void set(String name, Object value) {
         bindings.putMember(name, value);
     }
 
-    Value asValue(Object obj) {
+    public Value asValue(Object obj) {
         return context.asValue(obj);
     }
 
-    Value toPyList(Object arrayOrList) {
+    public Value toPyList(Object arrayOrList) {
         // cast to Object prevents object arrays from being spread as varargs
         return listConstructor.execute(arrayOrList);
     }
 
-    Value newList() {
+    public Value newList() {
         return listConstructor.execute();
     }
 
-    Value newDict() {
+    public Value newDict() {
         return dictConstructor.execute();
     }
 
     /** json.loads(s), fallback to str on parsing failure (null returns null) */
-    Value stringToPyObject(String s) {
+    public Value stringToPyObject(String s) {
         if (s == null) return null;
         try {
             return jsonLoads.execute(s);
@@ -76,7 +76,7 @@ class PythonEngine {
         }
     }
 
-    void close() {
+    public void close() {
         try {
             context.close(true);
         } catch (Exception e) {
@@ -84,55 +84,55 @@ class PythonEngine {
         }
     }
 
-    static int getArgumentCount(Value function) {
+    public static int getArgumentCount(Value function) {
         return function.getMember("__code__").getMember("co_argcount").asInt();
     }
 
-    static boolean isFunction(Value v) {
+    public static boolean isFunction(Value v) {
         return v != null && !v.isNull() && v.canExecute();
     }
 
-    static boolean isString(Value v) {
+    public static boolean isString(Value v) {
         return v != null && v.isString();
     }
 
-    static boolean isNone(Value v) {
+    public static boolean isNone(Value v) {
         return v == null || v.isNull();
     }
 
     /** matches Jython PyInteger check (python bool is an int subclass) */
-    static boolean isInteger(Value v) {
+    public static boolean isInteger(Value v) {
         return v != null && !v.isNull() && (v.isBoolean() || (v.isNumber() && v.fitsInInt()));
     }
 
-    static int asInt(Value v) {
+    public static int asInt(Value v) {
         return v.isBoolean() ? (v.asBoolean() ? 1 : 0) : v.asInt();
     }
 
-    static boolean isList(Value v) {
+    public static boolean isList(Value v) {
         return typeIs(v, "list");
     }
 
-    static boolean isTuple(Value v) {
+    public static boolean isTuple(Value v) {
         return typeIs(v, "tuple");
     }
 
-    static boolean isDict(Value v) {
+    public static boolean isDict(Value v) {
         return v != null && !v.isNull() && v.hasHashEntries();
     }
 
-    static String typeName(Value v) {
+    public static String typeName(Value v) {
         if (v == null || v.isNull()) return "NoneType";
         var meta = v.getMetaObject();
         return meta != null ? meta.getMetaSimpleName() : v.getClass().getSimpleName();
     }
 
-    static String asString(Value v) {
+    public static String asString(Value v) {
         if (v == null || v.isNull()) return null;
         return v.isString() ? v.asString() : v.toString();
     }
 
-    static void forEachHashEntry(Value dict, BiConsumer<Value, Value> consumer) {
+    public static void forEachHashEntry(Value dict, BiConsumer<Value, Value> consumer) {
         var it = dict.getHashEntriesIterator();
         while (it.hasIteratorNextElement()) {
             var entry = it.getIteratorNextElement();

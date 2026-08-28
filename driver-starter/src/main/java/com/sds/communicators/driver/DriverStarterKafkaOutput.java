@@ -119,7 +119,7 @@ public class DriverStarterKafkaOutput extends DriverStarter {
 
     @Override
     public void dispose() {
-        producer.close();
         super.dispose();
+        producer.close();
     }
 }

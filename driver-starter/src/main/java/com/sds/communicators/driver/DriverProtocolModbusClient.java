@@ -4,6 +4,7 @@ import com.digitalpetri.modbus.client.ModbusTcpClient;
 import com.digitalpetri.modbus.pdu.*;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
+import com.sds.communicators.driver.support.ModbusTcpSocketTransport;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.graalvm.polyglot.Value;

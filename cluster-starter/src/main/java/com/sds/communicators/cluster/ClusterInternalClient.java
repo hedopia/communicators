@@ -2,6 +2,7 @@ package com.sds.communicators.cluster;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
+import com.sds.communicators.cluster.support.NodeHttpClient;
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
 
@@ -12,7 +13,7 @@ import java.util.Set;
  * Typed client for {@code {nodeUrl}{clusterBasePath}/internal/...}, served on the node's
  * regular HTTP server so internal traffic shares the port of the public API.
  */
-class ClusterInternalClient {
+public class ClusterInternalClient {
     static final String INTERNAL_PATH = "/internal";
 
     private final NodeHttpClient client;
@@ -27,11 +28,11 @@ class ClusterInternalClient {
         call(url, "PUT", "/heartbeat", new HeartbeatRequest(nodeIndex, position, lastTransitionTime, sharedObjectSeq), null);
     }
 
-    NodeStatus getNodeStatus(String url) {
+    public NodeStatus getNodeStatus(String url) {
         return call(url, "GET", "/node-status", null, type(NodeStatus.class));
     }
 
-    void setToLeader(String url) {
+    public void setToLeader(String url) {
         call(url, "PUT", "/set-to-leader", null, null);
     }
 

@@ -1,5 +1,8 @@
 package com.sds.communicators.cluster;
 
+import com.sds.communicators.cluster.support.NodeHttpClient;
+import com.sds.communicators.cluster.support.RedirectFunction;
+import com.sds.communicators.cluster.support.RouteDispatcher;
 import com.sds.communicators.common.type.Position;
 import io.netty.channel.Channel;
 import io.reactivex.rxjava3.functions.Consumer;
@@ -7,7 +10,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
-import reactor.netty.http.HttpProtocol;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
 import reactor.netty.http.server.HttpServerRoutes;
@@ -23,6 +25,7 @@ public class ClusterStarter {
     @Getter
     int quorum;
     int leaderLostTimeoutSeconds;
+    @Getter
     int heartbeatSendingIntervalMillis;
 
     private final RedirectFunction redirectFunction;
@@ -39,6 +42,7 @@ public class ClusterStarter {
 
     @Getter
     final Set<String> nodeTargetUrls = new HashSet<>();
+    @Getter
     final String nodeUrl;
 
     @Getter
@@ -48,14 +52,6 @@ public class ClusterStarter {
     boolean isPrepared = false;
 
     private boolean isStarted = false;
-
-    /**
-     * Body limit for an h2c upgrade request. Reactor Netty defaults it to 0, which rejects any
-     * upgrade carrying a body with 413 - and the first internal call to a node is often a POST
-     * (a shared-object merge). Once upgraded the limit no longer applies, since later requests
-     * are HTTP/2 streams.
-     */
-    private static final int H2C_MAX_CONTENT_LENGTH = 64 * 1024 * 1024;
 
     public static Builder builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
         return new Builder(nodeTargetUrls, serverPort, nodeIndex);
@@ -223,10 +219,6 @@ public class ClusterStarter {
         if (httpServer) {
             server = HttpServer.create()
                     .port(serverPort)
-                    // h2c alongside HTTP/1.1 on the same port: node-to-node calls upgrade and
-                    // multiplex, browsers and any HTTP/1.1 client keep working unchanged
-                    .protocol(HttpProtocol.H2C, HttpProtocol.HTTP11)
-                    .httpRequestDecoder(spec -> spec.h2cMaxContentLength(H2C_MAX_CONTENT_LENGTH))
                     .doOnConnection(c -> {
                         serverChannels.add(c.channel());
                         c.onDispose(() -> serverChannels.remove(c.channel()));

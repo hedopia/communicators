@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.google.common.base.Strings;
 import com.sds.communicators.cluster.ClusterEvents;
 import com.sds.communicators.cluster.ClusterStarter;
-import com.sds.communicators.cluster.NodeHttpClient;
+import com.sds.communicators.cluster.support.NodeHttpClient;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Command;
 import com.sds.communicators.common.struct.Device;
@@ -473,8 +473,8 @@ class DriverService {
     }
 
     /**
-     * node-to-node call over the cluster's shared HTTP/2 (h2c) client, so driver traffic reuses
-     * the same connection per peer as the cluster's own internal calls.
+     * node-to-node call over the cluster's shared HTTP client, so driver traffic reuses
+     * the same connection pool per peer as the cluster's own internal calls.
      */
     private <T> T callNode(String targetUrl, String path, String method, Object body,
                            JavaType responseType, Map<String, String> headers) {

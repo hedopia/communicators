@@ -1,4 +1,4 @@
-package com.sds.communicators.driver;
+package com.sds.communicators.driver.support;
 
 import com.google.common.net.InetAddresses;
 import org.eclipse.milo.opcua.stack.core.security.*;
@@ -19,9 +19,9 @@ import java.util.Base64;
 import java.util.Collection;
 
 // Persistent OPC UA application identity and file-backed PKI trust store.
-final class OpcuaSecurityStore implements AutoCloseable {
-    static final String PASSWORD_PROPERTY = "communicators.opcua.key-store-password";
-    static final String PASSWORD_ENV = "COMMUNICATORS_OPCUA_KEY_STORE_PASSWORD";
+public final class OpcuaSecurityStore implements AutoCloseable {
+    public static final String PASSWORD_PROPERTY = "communicators.opcua.key-store-password";
+    public static final String PASSWORD_ENV = "COMMUNICATORS_OPCUA_KEY_STORE_PASSWORD";
 
     private final char[] password;
     private final FileBasedTrustListManager trustListManager;
@@ -32,7 +32,7 @@ final class OpcuaSecurityStore implements AutoCloseable {
     private final X509Certificate certificate;
     private final X509Certificate[] certificateChain;
 
-    static OpcuaSecurityStore openClient(
+    public static OpcuaSecurityStore openClient(
             Path pkiDir,
             String configuredPassword,
             String applicationUri,
@@ -40,7 +40,7 @@ final class OpcuaSecurityStore implements AutoCloseable {
         return open(pkiDir, configuredPassword, applicationUri, commonName, java.util.List.of(), false);
     }
 
-    static OpcuaSecurityStore openServer(
+    public static OpcuaSecurityStore openServer(
             Path pkiDir,
             String configuredPassword,
             String applicationUri,
@@ -187,23 +187,23 @@ final class OpcuaSecurityStore implements AutoCloseable {
         }
     }
 
-    CertificateValidator certificateValidator() {
+    public CertificateValidator certificateValidator() {
         return certificateValidator;
     }
 
-    CertificateManager certificateManager() {
+    public CertificateManager certificateManager() {
         return certificateManager;
     }
 
-    KeyPair keyPair() {
+    public KeyPair keyPair() {
         return keyPair;
     }
 
-    X509Certificate certificate() {
+    public X509Certificate certificate() {
         return certificate;
     }
 
-    X509Certificate[] certificateChain() {
+    public X509Certificate[] certificateChain() {
         return certificateChain.clone();
     }
 

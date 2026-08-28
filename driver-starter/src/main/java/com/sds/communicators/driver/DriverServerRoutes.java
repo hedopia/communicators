@@ -3,7 +3,7 @@ package com.sds.communicators.driver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sds.communicators.cluster.RouteDispatcher;
+import com.sds.communicators.cluster.support.RouteDispatcher;
 import com.sds.communicators.common.struct.Command;
 import com.sds.communicators.common.struct.Device;
 import com.sds.communicators.common.type.StatusCode;

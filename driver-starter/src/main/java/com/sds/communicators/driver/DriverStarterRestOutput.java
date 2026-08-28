@@ -95,9 +95,6 @@ public class DriverStarterRestOutput extends DriverStarter {
         this.restOutputTargetUrls = List.copyOf(restOutputTargetUrls);
         this.loadBalancer = new LoadBalancer(this.restOutputTargetUrls.size());
         this.readTimeout = Duration.ofMillis(clusterStarterBuilder.getReadTimeoutMillis());
-        // HTTP/1.1 on purpose: these targets are third-party systems. An h2c upgrade carries the
-        // POST body, and a server that caps the upgrade size rejects it outright, so the plain
-        // protocol is the safe default here (node-to-node traffic uses h2c instead).
         this.httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofMillis(clusterStarterBuilder.getConnectTimeoutMillis()))

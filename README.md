@@ -24,7 +24,7 @@ All Java modules currently use project version `3.8`.
 ### Module relationships
 
 - `common` contains the data model shared by every module.
-- `cluster-starter` uses Reactor Netty for the public HTTP API and serves internal node-to-node calls under `{clusterBasePath}/internal` on the same port. That port also offers h2c, and the internal client (JDK `HttpClient`) uses it, so node-to-node traffic multiplexes over a single connection per peer.
+- `cluster-starter` uses Reactor Netty for the public HTTP API and serves internal node-to-node calls under `{clusterBasePath}/internal` on the same port, through a shared JDK `HttpClient`.
 - `driver-starter` embeds `cluster-starter` and provides device load balancing and failover. Output implementations are available for no output, files, Kafka, and REST; applications can also extend `DriverStarter` to implement a custom output.
 - `driver-starter/ui` is a React and Vite application. Its production build is written to `driver-starter/src/main/resources/static`.
 - The `io-*` modules run Spring Boot WebFlux (web application type `reactive`), so Spring Boot owns the Reactor Netty HTTP server. The driver is started with `startWithoutHttpServer()`, and its cluster, driver, and web UI routes are contributed through a `NettyRouteProvider` bean; Spring Boot appends the WebFlux handler after those routes as a catch-all, so WebFlux endpoints can be added alongside them. The server keeps Spring Boot's default event loops: the blocking driver and cluster handlers are dispatched to a per-request worker thread by `RouteDispatcher`, so the loops are never occupied by them.

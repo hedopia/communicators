@@ -728,7 +728,7 @@ The default base path is `/driver`.
 
 The four command endpoints accept an optional `initial-value` header. The command-ID endpoints accept a JSON string array; the command endpoints accept a JSON Command array.
 
-Follower-to-leader delegation and leader-to-node connection distribution use the internal routes under `{driverBasePath}/internal` on the node's HTTP port. Those calls, and the cross-node command, status and response calls, go through the `NodeHttpClient` that `cluster-starter` owns, so they share its h2c connection to each peer.
+Follower-to-leader delegation and leader-to-node connection distribution use the internal routes under `{driverBasePath}/internal` on the node's HTTP port. Those calls, and the cross-node command, status and response calls, go through the `NodeHttpClient` that `cluster-starter` owns, so they share its connection pool to each peer.
 
 ## Web UI
 

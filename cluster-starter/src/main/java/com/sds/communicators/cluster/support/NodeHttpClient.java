@@ -1,4 +1,4 @@
-package com.sds.communicators.cluster;
+package com.sds.communicators.cluster.support;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
@@ -13,23 +13,16 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
-/**
- * Shared HTTP client for node-to-node calls, with Jackson JSON bodies.
- * <p>
- * Configured for HTTP/2, which over plaintext {@code http://} means h2c negotiated with an
- * HTTP/1.1 {@code Upgrade}. The upgrade happens once per connection; later calls are multiplexed
- * streams on it, so concurrency no longer costs connections. A node that still speaks only
- * HTTP/1.1 answers without upgrading and this client falls back, keeping rolling deploys working.
- */
+/** Shared HTTP client for node-to-node calls, with Jackson JSON bodies. */
 public final class NodeHttpClient {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Duration readTimeout;
 
-    NodeHttpClient(int connectTimeoutMillis, int readTimeoutMillis) {
+    public NodeHttpClient(int connectTimeoutMillis, int readTimeoutMillis) {
         this.readTimeout = Duration.ofMillis(readTimeoutMillis);
         this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_2)
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofMillis(connectTimeoutMillis))
                 .build();
     }
@@ -85,7 +78,7 @@ public final class NodeHttpClient {
         }
     }
 
-    void dispose() {
+    public void dispose() {
         httpClient.close();
     }
 }
