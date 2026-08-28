@@ -16,10 +16,10 @@ ClusterStarter                  Entry point and lifecycle owner for the HTTP ser
 ClusterServerRoutes             Public cluster REST API, redirect proxy, and internal node-to-node routes
 ClusterService                  Leader/follower transitions, heartbeats, and shared-object synchronization
 ClusterInternalClient           Typed client for the internal node-to-node routes
+ClusterRedirectFunction         Leader/index dispatch, election, retry, and parallel-execution utilities
 ClusterEvents                   Event registration API
 support/NodeHttpClient          Shared JDK HttpClient for all node-to-node calls
 support/RouteDispatcher         Runs each request's handler on its own worker thread
-support/RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
 ```
 
 ## Runtime behavior

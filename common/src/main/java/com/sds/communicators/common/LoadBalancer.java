@@ -19,6 +19,8 @@ public class LoadBalancer {
     private final AtomicInteger shuffleIdx = new AtomicInteger(0);
 
     public LoadBalancer(int size, int threshold, int shuffledIndexesCnt) {
+        if (size <= 0)
+            throw new IllegalArgumentException("at least one target is required (size=" + size + ")");
         this.size = size;
         this.threshold = threshold;
         for (int i = 0; i < size; i++) {

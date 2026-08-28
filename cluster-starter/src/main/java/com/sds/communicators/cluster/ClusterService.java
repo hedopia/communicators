@@ -1,6 +1,5 @@
 package com.sds.communicators.cluster;
 
-import com.sds.communicators.cluster.support.RedirectFunction;
 import com.sds.communicators.common.type.Position;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -23,7 +22,7 @@ import java.util.stream.Collectors;
 @Slf4j
 class ClusterService {
     private final ClusterStarter clusterStarter;
-    private final RedirectFunction redirectFunction;
+    private final ClusterRedirectFunction redirectFunction;
     private final ClusterInternalClient client;
 
     final ClusterEvents clusterEvents = new ClusterEvents();
@@ -41,7 +40,7 @@ class ClusterService {
     private final Object setSharedObjectMutex = new Object();
     private final Object syncMutex = new Object();
 
-    ClusterService(ClusterStarter clusterStarter, RedirectFunction redirectFunction, ClusterInternalClient client) {
+    ClusterService(ClusterStarter clusterStarter, ClusterRedirectFunction redirectFunction, ClusterInternalClient client) {
         this.clusterStarter = clusterStarter;
         this.redirectFunction = redirectFunction;
         this.client = client;

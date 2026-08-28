@@ -1,7 +1,5 @@
-package com.sds.communicators.cluster.support;
+package com.sds.communicators.cluster;
 
-import com.sds.communicators.cluster.ClusterInternalClient;
-import com.sds.communicators.cluster.ClusterStarter;
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
 import io.reactivex.rxjava3.functions.Consumer;
@@ -20,7 +18,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
-public class RedirectFunction {
+class ClusterRedirectFunction {
     private final ReentrantLock mutex = new ReentrantLock();
     private final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newCachedThreadPool();
 
@@ -29,62 +27,65 @@ public class RedirectFunction {
     private final ClusterStarter clusterStarter;
 
 
-    public void toLeaderFuncConfirmed(Consumer<String> consumer, String name) {
-        toLeaderFunc(consumer, name, true, true);
+    void toLeaderFuncConfirmed(Consumer<String> consumer, String name) {
+        toLeaderFunc(consumer, name, true);
     }
 
-    public Throwable toLeaderFunc(Consumer<String> consumer, String name) {
-        return toLeaderFunc(consumer, name, false, true);
+    Throwable toLeaderFunc(Consumer<String> consumer, String name) {
+        return toLeaderFunc(consumer, name, false);
     }
 
-    private Throwable toLeaderFunc(Consumer<String> consumer, String name, boolean confirmedExecution, boolean isFirst) {
-        log.trace("execute to-leader-function: {}", name);
-        if (!isFirst) {
-            try {
-                Thread.sleep(clusterStarter.getHeartbeatSendingIntervalMillis());
-            } catch (InterruptedException ignored) {}
-        }
-        AtomicReference<String> leaderUrl = new AtomicReference<>(null);
-        if (clusterStarter.getPosition() == Position.LEADER)
-            leaderUrl.set(clusterStarter.getNodeUrl());
-        else
-            parallelExecute(nodeTargetUrls, targetUrl -> {
-                try {
-                    if (client.getNodeStatus(targetUrl).getPosition() == Position.LEADER)
-                        leaderUrl.set(targetUrl);
-                } catch (Exception e) {
-                    log.trace("({}) check status (url={}) failed to leader function::{}", name, targetUrl, e.getMessage());
-                }
-            });
+    /** retries run as a loop, not recursion - a long leaderless outage must not grow the stack */
+    private Throwable toLeaderFunc(Consumer<String> consumer, String name, boolean confirmedExecution) {
+        while (true) {
+            log.trace("execute to-leader-function: {}", name);
+            AtomicReference<String> leaderUrl = new AtomicReference<>(null);
+            if (clusterStarter.position == Position.LEADER)
+                leaderUrl.set(clusterStarter.nodeUrl);
+            else
+                parallelExecute(nodeTargetUrls, targetUrl -> {
+                    try {
+                        if (client.getNodeStatus(targetUrl).getPosition() == Position.LEADER)
+                            leaderUrl.set(targetUrl);
+                    } catch (Exception e) {
+                        log.trace("({}) check status (url={}) failed to leader function::{}", name, targetUrl, e.getMessage());
+                    }
+                });
 
-        if (leaderUrl.get() == null) {
-            log.error("({}) leader not found, start to elect leader and retry to leader function", name);
-            electLeader();
-            return toLeaderFunc(consumer, name, confirmedExecution, false);
-        } else {
+            if (leaderUrl.get() == null) {
+                log.error("({}) leader not found, start to elect leader and retry to leader function", name);
+                electLeader();
+                sleepHeartbeatInterval();
+                continue;
+            }
             try {
                 consumer.accept(leaderUrl.get());
                 log.trace("execute to-leader-function finished: {}", name);
                 return null;
             } catch (Throwable e) {
                 log.error("({}) execute to-leader-function failed (url={})::{}", name, leaderUrl.get(), e.getMessage());
-                if (confirmedExecution)
-                    return toLeaderFunc(consumer, name, true, false);
-                else
+                if (!confirmedExecution)
                     return e;
+                sleepHeartbeatInterval();
             }
         }
     }
 
-    public void electLeader() {
+    private void sleepHeartbeatInterval() {
+        try {
+            Thread.sleep(clusterStarter.heartbeatSendingIntervalMillis);
+        } catch (InterruptedException ignored) {}
+    }
+
+    void electLeader() {
         log.trace("try to elect leader");
         if (mutex.tryLock()) {
             AtomicBoolean existLeader = new AtomicBoolean(false);
             Map<Integer, String> candidates = new ConcurrentHashMap<>();
-            if (clusterStarter.getPosition() == Position.LEADER) {
+            if (clusterStarter.position == Position.LEADER) {
                 existLeader.set(true);
             } else {
-                candidates.putIfAbsent(clusterStarter.getNodeIndex(), clusterStarter.getNodeUrl());
+                candidates.putIfAbsent(clusterStarter.nodeIndex, clusterStarter.nodeUrl);
                 parallelExecute(nodeTargetUrls, targetUrl -> {
                     try {
                         NodeStatus nodeStatus = client.getNodeStatus(targetUrl);
@@ -120,11 +121,11 @@ public class RedirectFunction {
         }
     }
 
-    public Throwable toIndexFunc(int nodeIndex, Consumer<String> consumer, String name) {
+    Throwable toIndexFunc(int nodeIndex, Consumer<String> consumer, String name) {
         log.trace("execute to-index-function: {}, node-index: {}", name, nodeIndex);
         AtomicReference<String> indexUrl = new AtomicReference<>(null);
-        if (clusterStarter.getNodeIndex() == nodeIndex)
-            indexUrl.set(clusterStarter.getNodeUrl());
+        if (clusterStarter.nodeIndex == nodeIndex)
+            indexUrl.set(clusterStarter.nodeUrl);
         else
             parallelExecute(nodeTargetUrls, targetUrl -> {
                 try {
@@ -150,7 +151,7 @@ public class RedirectFunction {
         }
     }
 
-    public void toAllFunc(Consumer<String> consumer, String name) {
+    void toAllFunc(Consumer<String> consumer, String name) {
         log.trace("execute to-all-function: {}", name);
         parallelExecute(nodeTargetUrls, targetUrl -> {
             try {
@@ -163,7 +164,7 @@ public class RedirectFunction {
         log.trace("execute to-all-function finished: {}", name);
     }
 
-    public <T> void parallelExecute(Collection<T> collection, Consumer<T> consumer) {
+    <T> void parallelExecute(Collection<T> collection, Consumer<T> consumer) {
         List<Future<?>> futures = new ArrayList<>();
         for (T item : new ArrayList<>(collection))
             futures.add(executor.submit(() -> {

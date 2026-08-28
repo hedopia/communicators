@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sds.communicators.cluster.support.RedirectFunction;
 import com.sds.communicators.cluster.support.RouteDispatcher;
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
@@ -18,14 +17,13 @@ import reactor.netty.http.server.HttpServerResponse;
 import reactor.netty.http.server.HttpServerRoutes;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 @Slf4j
 class ClusterServerRoutes {
-    private final RedirectFunction redirectFunction;
+    private final ClusterRedirectFunction redirectFunction;
     private final ClusterStarter clusterStarter;
     private final ClusterService clusterService;
     private final String clusterBasePath;
@@ -40,15 +38,17 @@ class ClusterServerRoutes {
             "host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
             "te", "trailer", "transfer-encoding", "upgrade");
 
-    ClusterServerRoutes(RedirectFunction redirectFunction, ClusterStarter clusterStarter, ClusterService clusterService, String clusterBasePath,
-                        int connectTimeoutMillis, int readTimeoutMillis) {
+    ClusterServerRoutes(ClusterRedirectFunction redirectFunction, ClusterStarter clusterStarter, ClusterService clusterService, String clusterBasePath,
+                        int connectTimeoutMillis) {
         this.redirectFunction = redirectFunction;
         this.clusterStarter = clusterStarter;
         this.clusterService = clusterService;
         this.clusterBasePath = clusterBasePath;
+        // no response timeout on purpose: proxied handlers (e.g. a large connect-all) may
+        // legitimately block far longer than any fixed internal limit, and aborting here leaves
+        // the target still working while the caller sees an error - the caller's own timeout governs
         this.proxyClient = HttpClient.create()
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
-                .responseTimeout(Duration.ofMillis(readTimeoutMillis));
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
     }
 
     void apply(HttpServerRoutes routes) {

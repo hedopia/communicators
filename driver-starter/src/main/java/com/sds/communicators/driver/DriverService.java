@@ -3,6 +3,7 @@ package com.sds.communicators.driver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.google.common.base.Strings;
 import com.sds.communicators.cluster.ClusterEvents;
 import com.sds.communicators.cluster.ClusterStarter;
@@ -18,6 +19,9 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Pair;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,6 +29,14 @@ import java.util.stream.Collectors;
 
 @Slf4j
 class DriverService {
+    private static final TypeFactory TYPES = TypeFactory.defaultInstance();
+    private static final JavaType MAP_OF_STRING = TYPES.constructType(new TypeReference<Map<String, String>>() {});
+    private static final JavaType LIST_OF_RESPONSE = TYPES.constructType(new TypeReference<List<Response>>() {});
+    private static final JavaType RESPONSE_MAPS = TYPES.constructType(new TypeReference<Map<String, Map<String, Response>>>() {});
+    private static final JavaType RESPONSE_MAP = TYPES.constructType(new TypeReference<Map<String, Response>>() {});
+    private static final JavaType STATUS_MAP = TYPES.constructType(new TypeReference<Map<String, StatusCode>>() {});
+    private static final JavaType STATUS_CODE = TYPES.constructType(StatusCode.class);
+
     private final DriverStarter driverStarter;
     private final String driverBasePath;
     private final Object driverMutex = new Object();
@@ -94,8 +106,8 @@ class DriverService {
                         ret.putAll(connectAll(deviceSet));
                 } else {
                     var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                                    ret.putAll(callNode(targetUrl, DriverServerRoutes.INTERNAL_PATH + "/connect-all-to-index",
-                                            "POST", deviceSet, mapOfString(), Map.of())),
+                                    ret.putAll(callNode(targetUrl, "POST", DriverServerRoutes.INTERNAL_PATH + "/connect-all-to-index",
+                                            deviceSet, MAP_OF_STRING)),
                             "connect all to node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(deviceSet));
                     if (result != null) {
                         log.error("connect all to node-index: {} failed, connect to leader, devices: {}", nodeIndex, UtilFunc.joinDeviceId(deviceSet), result);
@@ -107,16 +119,16 @@ class DriverService {
         } else {
             var ret = new HashMap<String, String>();
             clusterStarter.toLeaderFuncConfirmed(targetUrl ->
-                            ret.putAll(callNode(targetUrl, DriverServerRoutes.INTERNAL_PATH + "/connect-all-to-leader/" + nodeIndex,
-                                    "POST", devices, mapOfString(), Map.of())),
+                            ret.putAll(callNode(targetUrl, "POST", DriverServerRoutes.INTERNAL_PATH + "/connect-all-to-leader/" + nodeIndex,
+                                    devices, MAP_OF_STRING)),
                     "connect all to leader for node-index: " + nodeIndex + ", devices: " + UtilFunc.joinDeviceId(devices));
             return ret;
         }
     }
 
-    /** NodeHttpClient already puts the failed response body into the message */
+    /** surfaced through the public API, so use the reason (peer's response body) without internal node URLs */
     private String errorParser(Throwable e) {
-        return e.getMessage();
+        return e instanceof NodeHttpClient.CallException ce ? ce.getReason() : e.getMessage();
     }
 
     Map<String, String> connectAll(Set<Device> devices) {
@@ -202,8 +214,7 @@ class DriverService {
                     var nodeIndex = ((Pair<Integer, List<String>>) obj).getValue0();
                     var deviceIdList = ((Pair<Integer, List<String>>) obj).getValue1();
                     var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                                    ret.putAll(callNode(targetUrl, "/disconnect", "DELETE", deviceIdList,
-                                            http().type(new TypeReference<Map<String, String>>() {}), Map.of())),
+                                    ret.putAll(callNode(targetUrl, "DELETE", "/disconnect", deviceIdList, MAP_OF_STRING)),
                             "disconnect to node-index: " + nodeIndex + ", devices: " + String.join(", ", deviceIdList));
                     if (result != null)
                         ret.putAll(deviceIdList.stream().collect(Collectors.toMap(id -> id, id -> errorParser(result))));
@@ -376,8 +387,7 @@ class DriverService {
     Map<String, Map<String, Response>> getResponse(int nodeIndex) throws Throwable {
         AtomicReference<Map<String, Map<String, Response>>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/response", "GET", null,
-                                http().type(new TypeReference<Map<String, Map<String, Response>>>() {}), Map.of())),
+                        ret.set(callNode(targetUrl, "GET", "/response", null, RESPONSE_MAPS)),
                 "get response map for node-index: " + nodeIndex);
         if (result != null) throw result;
         return ret.get();
@@ -386,8 +396,7 @@ class DriverService {
     Map<String, Response> getResponse(int nodeIndex, String deviceId) throws Throwable {
         AtomicReference<Map<String, Response>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/response/" + deviceId, "GET", null,
-                                http().type(new TypeReference<Map<String, Response>>() {}), Map.of())),
+                        ret.set(callNode(targetUrl, "GET", "/response/" + deviceId, null, RESPONSE_MAP)),
                 "get response for node-index: " + nodeIndex + ", device-id: " + deviceId);
         if (result != null) throw result;
         return ret.get();
@@ -400,8 +409,7 @@ class DriverService {
     Map<String, StatusCode> getDeviceStatus(int nodeIndex) throws Throwable {
         AtomicReference<Map<String, StatusCode>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/device-status", "GET", null,
-                                http().type(new TypeReference<Map<String, StatusCode>>() {}), Map.of())),
+                        ret.set(callNode(targetUrl, "GET", "/device-status", null, STATUS_MAP)),
                 "get device status map for node-index: " + nodeIndex);
         if (result != null) throw result;
         return ret.get();
@@ -410,8 +418,8 @@ class DriverService {
     StatusCode getDeviceStatus(int nodeIndex, String deviceId) throws Throwable {
         AtomicReference<StatusCode> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                ret.set(callNode(targetUrl, "/device-status/" + deviceId, "GET", null,
-                        http().type(StatusCode.class), Map.of())), "get device status for node-index: " + nodeIndex + ", device-id: " + deviceId);
+                ret.set(callNode(targetUrl, "GET", "/device-status/" + deviceId, null, STATUS_CODE)),
+                "get device status for node-index: " + nodeIndex + ", device-id: " + deviceId);
         if (result != null) throw result;
         return ret.get();
     }
@@ -435,8 +443,8 @@ class DriverService {
     List<Response> executeCommands(int nodeIndex, String deviceId, String initialValue, Set<Command> commands) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/execute-commands/" + deviceId, "POST", commands,
-                                listOfResponse(), initialValueHeader(initialValue))),
+                        ret.set(callNode(targetUrl, "POST", "/execute-commands/" + deviceId, commands,
+                                LIST_OF_RESPONSE, initialValueHeader(initialValue))),
                 "execute commands for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + UtilFunc.joinCommandId(commands));
         if (result != null) throw result;
         return ret.get();
@@ -445,8 +453,8 @@ class DriverService {
     List<Response> requestCommands(int nodeIndex, String deviceId, String initialValue, Set<Command> commands) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/request-commands/" + deviceId, "POST", commands,
-                                listOfResponse(), initialValueHeader(initialValue))),
+                        ret.set(callNode(targetUrl, "POST", "/request-commands/" + deviceId, commands,
+                                LIST_OF_RESPONSE, initialValueHeader(initialValue))),
                 "request commands for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + UtilFunc.joinCommandId(commands));
         if (result != null) throw result;
         return ret.get();
@@ -455,8 +463,8 @@ class DriverService {
     List<Response> executeCommandIds(int nodeIndex, String deviceId, String initialValue, List<String> commandIdList) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/execute-command-ids/" + deviceId, "POST", commandIdList,
-                                listOfResponse(), initialValueHeader(initialValue))),
+                        ret.set(callNode(targetUrl, "POST", "/execute-command-ids/" + deviceId, commandIdList,
+                                LIST_OF_RESPONSE, initialValueHeader(initialValue))),
                 "execute command ids for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + commandIdList);
         if (result != null) throw result;
         return ret.get();
@@ -465,8 +473,8 @@ class DriverService {
     List<Response> requestCommandIds(int nodeIndex, String deviceId, String initialValue, List<String> commandIdList) throws Throwable {
         AtomicReference<List<Response>> ret = new AtomicReference<>();
         var result = clusterStarter.toIndexFunc(nodeIndex, targetUrl ->
-                        ret.set(callNode(targetUrl, "/request-command-ids/" + deviceId, "POST", commandIdList,
-                                listOfResponse(), initialValueHeader(initialValue))),
+                        ret.set(callNode(targetUrl, "POST", "/request-command-ids/" + deviceId, commandIdList,
+                                LIST_OF_RESPONSE, initialValueHeader(initialValue))),
                 "request command ids for node-index: " + nodeIndex + ", device-id: " + deviceId + ", commands: " + commandIdList);
         if (result != null) throw result;
         return ret.get();
@@ -476,28 +484,22 @@ class DriverService {
      * node-to-node call over the cluster's shared HTTP client, so driver traffic reuses
      * the same connection pool per peer as the cluster's own internal calls.
      */
-    private <T> T callNode(String targetUrl, String path, String method, Object body,
+    private <T> T callNode(String targetUrl, String method, String path, Object body, JavaType responseType) {
+        return callNode(targetUrl, method, path, body, responseType, Map.of());
+    }
+
+    private <T> T callNode(String targetUrl, String method, String path, Object body,
                            JavaType responseType, Map<String, String> headers) {
-        return http().call(targetUrl + driverBasePath + path, method, body, responseType, headers);
-    }
-
-    private NodeHttpClient http() {
-        return clusterStarter.getNodeHttpClient();
-    }
-
-    private JavaType listOfResponse() {
-        return http().type(new TypeReference<List<Response>>() {});
-    }
-
-    private JavaType mapOfString() {
-        return http().type(new TypeReference<Map<String, String>>() {});
+        return clusterStarter.getNodeHttpClient().call(targetUrl + driverBasePath + path, method, body, responseType, headers);
     }
 
     /**
-     * The routes read {@code initial-value} from a request header, so it must be sent as one.
+     * The routes read {@code initial-value} from a request header; header values only carry
+     * Latin-1, so the value is sent URL-encoded (UTF-8) and the routes decode it.
      * A null value is simply omitted, which the route reads back as null.
      */
     private Map<String, String> initialValueHeader(String initialValue) {
-        return initialValue == null ? Map.of() : Map.of("initial-value", initialValue);
+        return initialValue == null ? Map.of()
+                : Map.of("initial-value", URLEncoder.encode(initialValue, StandardCharsets.UTF_8));
     }
 }

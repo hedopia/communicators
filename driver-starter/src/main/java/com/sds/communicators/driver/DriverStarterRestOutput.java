@@ -8,12 +8,6 @@ import com.sds.communicators.common.struct.Status;
 import lombok.extern.slf4j.Slf4j;
 import reactor.netty.http.server.HttpServerRoutes;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -24,8 +18,6 @@ public class DriverStarterRestOutput extends DriverStarter {
     /** fixed order so that the LoadBalancer's indexes always mean the same target */
     private final List<String> restOutputTargetUrls;
     private final LoadBalancer loadBalancer;
-    private final HttpClient httpClient;
-    private final Duration readTimeout;
     private final String responsePath;
     private final String responseFormat;
     private final String statusPath;
@@ -94,11 +86,6 @@ public class DriverStarterRestOutput extends DriverStarter {
 
         this.restOutputTargetUrls = List.copyOf(restOutputTargetUrls);
         this.loadBalancer = new LoadBalancer(this.restOutputTargetUrls.size());
-        this.readTimeout = Duration.ofMillis(clusterStarterBuilder.getReadTimeoutMillis());
-        this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofMillis(clusterStarterBuilder.getConnectTimeoutMillis()))
-                .build();
         this.responsePath = responsePath;
         this.responseFormat = responseFormat;
         this.statusPath = statusPath;
@@ -124,30 +111,15 @@ public class DriverStarterRestOutput extends DriverStarter {
         }
     }
 
-    @Override
-    public void dispose() {
-        super.dispose();
-        httpClient.close();
-    }
-
     /**
      * Posts to one of the configured targets. The LoadBalancer spreads the load, remembers which
      * targets have been failing so it can skip them, and falls back to a skipped one when every
      * other target fails too; it returns the last error when none succeeded.
      */
     private void post(String path, String body) throws Throwable {
-        var failure = loadBalancer.run(index -> send(restOutputTargetUrls.get(index) + path, body));
+        // the cluster's shared NodeHttpClient is reused; the body is already-rendered JSON
+        var failure = loadBalancer.run(index ->
+                getClusterStarter().getNodeHttpClient().callRaw(restOutputTargetUrls.get(index) + path, "POST", body));
         if (failure != null) throw failure;
-    }
-
-    private void send(String uri, String body) throws Exception {
-        var request = HttpRequest.newBuilder(URI.create(uri))
-                .timeout(readTimeout)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
-        var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() / 100 != 2)
-            throw new Exception("POST " + uri + " failed, status " + response.statusCode() + "::" + response.body());
     }
 }

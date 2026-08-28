@@ -662,9 +662,13 @@ Example using `initial-value`:
 
 ```text
 POST /driver/execute-command-ids/modbus_plc_1
-initial-value: {"speed":1500}
+initial-value: %7B%22speed%22%3A1500%7D        <- URL-encoded {"speed":1500}
 Body: ["write_speed"]
 ```
+
+The `initial-value` header value must be URL-encoded (UTF-8); the server decodes it before use.
+This is what allows values containing non-Latin-1 text (for example Korean), which raw HTTP
+headers cannot carry.
 
 ```python
 def requestInfo(initialValue):
@@ -729,7 +733,7 @@ The default base path is `/driver`.
 | `POST` | `/execute-command-ids/{deviceId}` | Run registered command IDs and emit Responses |
 | `POST` | `/request-command-ids/{deviceId}` | Run registered command IDs without output emission |
 
-The four command endpoints accept an optional `initial-value` header. The command-ID endpoints accept a JSON string array; the command endpoints accept a JSON Command array.
+The four command endpoints accept an optional `initial-value` header, whose value must be URL-encoded (UTF-8). The command-ID endpoints accept a JSON string array; the command endpoints accept a JSON Command array.
 
 Follower-to-leader delegation and leader-to-node connection distribution use the internal routes under `{driverBasePath}/internal` on the node's HTTP port. Those calls, and the cross-node command, status and response calls, go through the `NodeHttpClient` that `cluster-starter` owns, so they share its connection pool to each peer.
 

@@ -16,6 +16,7 @@ import reactor.netty.http.server.HttpServerRoutes;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Consumer;
@@ -172,7 +173,7 @@ class DriverServerRoutes {
             routes.post(driverBasePath + "/execute-commands/{deviceId}", (request, response) -> {
                 log.trace(request.uri());
                 String deviceId = request.param("deviceId");
-                String initialValue = request.requestHeaders().get("initial-value");
+                String initialValue = initialValue(request);
                 return requestBody(request).flatMap(body -> {
                     try {
                         Set<Command> commands = objectMapper.readValue(body, new TypeReference<Set<Command>>() {});
@@ -186,7 +187,7 @@ class DriverServerRoutes {
             routes.post(driverBasePath + "/request-commands/{deviceId}", (request, response) -> {
                 log.trace(request.uri());
                 String deviceId = request.param("deviceId");
-                String initialValue = request.requestHeaders().get("initial-value");
+                String initialValue = initialValue(request);
                 return requestBody(request).flatMap(body -> {
                     try {
                         Set<Command> commands = objectMapper.readValue(body, new TypeReference<Set<Command>>() {});
@@ -200,7 +201,7 @@ class DriverServerRoutes {
             routes.post(driverBasePath + "/execute-command-ids/{deviceId}", (request, response) -> {
                 log.trace(request.uri());
                 String deviceId = request.param("deviceId");
-                String initialValue = request.requestHeaders().get("initial-value");
+                String initialValue = initialValue(request);
                 return requestBody(request).flatMap(body -> {
                     try {
                         List<String> commandIdList = objectMapper.readValue(body, new TypeReference<List<String>>() {});
@@ -214,7 +215,7 @@ class DriverServerRoutes {
             routes.post(driverBasePath + "/request-command-ids/{deviceId}", (request, response) -> {
                 log.trace(request.uri());
                 String deviceId = request.param("deviceId");
-                String initialValue = request.requestHeaders().get("initial-value");
+                String initialValue = initialValue(request);
                 return requestBody(request).flatMap(body -> {
                     try {
                         List<String> commandIdList = objectMapper.readValue(body, new TypeReference<List<String>>() {});
@@ -289,6 +290,12 @@ class DriverServerRoutes {
                     .sendString(Mono.just("response body serialization failed::" + e.getMessage()))
                     .then();
         }
+    }
+
+    /** header values only carry Latin-1, so {@code initial-value} arrives URL-encoded (UTF-8) */
+    private static String initialValue(HttpServerRequest request) {
+        String value = request.requestHeaders().get("initial-value");
+        return value == null ? null : URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
     private static Mono<String> requestBody(HttpServerRequest request) {

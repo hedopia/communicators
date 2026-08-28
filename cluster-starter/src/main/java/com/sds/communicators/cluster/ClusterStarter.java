@@ -1,7 +1,6 @@
 package com.sds.communicators.cluster;
 
 import com.sds.communicators.cluster.support.NodeHttpClient;
-import com.sds.communicators.cluster.support.RedirectFunction;
 import com.sds.communicators.cluster.support.RouteDispatcher;
 import com.sds.communicators.common.type.Position;
 import io.netty.channel.Channel;
@@ -25,10 +24,9 @@ public class ClusterStarter {
     @Getter
     int quorum;
     int leaderLostTimeoutSeconds;
-    @Getter
     int heartbeatSendingIntervalMillis;
 
-    private final RedirectFunction redirectFunction;
+    private final ClusterRedirectFunction redirectFunction;
     private final ClusterService clusterService;
     private final ClusterServerRoutes clusterServerRoutes;
     private final java.util.function.Consumer<HttpServerRoutes> additionalRoutes;
@@ -42,7 +40,6 @@ public class ClusterStarter {
 
     @Getter
     final Set<String> nodeTargetUrls = new HashSet<>();
-    @Getter
     final String nodeUrl;
 
     @Getter
@@ -193,10 +190,10 @@ public class ClusterStarter {
 
         this.nodeTargetUrls.addAll(nodeTargetUrls.stream().filter(url -> !nodeUrls.contains(url)).collect(Collectors.toSet()));
 
-        redirectFunction = new RedirectFunction(this.nodeTargetUrls, internalClient, this);
+        redirectFunction = new ClusterRedirectFunction(this.nodeTargetUrls, internalClient, this);
         clusterService = new ClusterService(this, redirectFunction, internalClient);
         clusterServerRoutes = new ClusterServerRoutes(redirectFunction, this, clusterService, clusterBasePath,
-                connectTimeoutMillis, readTimeoutMillis);
+                connectTimeoutMillis);
         clusterService.clusterEvents.addAll(clusterEvents);
         this.additionalRoutes = routes;
     }
@@ -228,11 +225,14 @@ public class ClusterStarter {
         }
 
         for (String targetUrl : nodeTargetUrls) {
+            int index;
             try {
-                var index = internalClient.getNodeIndex(targetUrl);
-                if (nodeIndex == index)
-                    throw new Exception("this node (" + nodeUrl + ") and (" + targetUrl + "), node-index(" + index + ") duplicated");
-            } catch (Exception ignored) {}
+                index = internalClient.getNodeIndex(targetUrl);
+            } catch (Exception unreachable) {
+                continue;
+            }
+            if (nodeIndex == index)
+                throw new Exception("this node (" + nodeUrl + ") and (" + targetUrl + "), node-index(" + index + ") duplicated");
         }
         log.info("(node-index: {}, url: {}) started", nodeIndex, nodeUrl);
     }
