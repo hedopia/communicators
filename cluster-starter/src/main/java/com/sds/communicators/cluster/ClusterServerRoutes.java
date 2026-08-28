@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
+import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -15,9 +16,8 @@ import reactor.netty.http.server.HttpServerResponse;
 import reactor.netty.http.server.HttpServerRoutes;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Map;
+import java.time.Duration;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -27,16 +27,26 @@ class ClusterServerRoutes {
     private final ClusterStarter clusterStarter;
     private final ClusterService clusterService;
     private final String clusterBasePath;
+    private final HttpClient proxyClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final String REDIRECT_TO_LEADER = "/redirect-to-leader";
     private static final String REDIRECT_TO_INDEX = "/redirect-to-index";
 
-    ClusterServerRoutes(RedirectFunction redirectFunction, ClusterStarter clusterStarter, ClusterService clusterService, String clusterBasePath) {
+    /** hop-by-hop headers (RFC 9110 §7.6.1) plus Host, which is set from the target URI instead */
+    private static final Set<String> NOT_FORWARDED = Set.of(
+            "host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+            "te", "trailer", "transfer-encoding", "upgrade");
+
+    ClusterServerRoutes(RedirectFunction redirectFunction, ClusterStarter clusterStarter, ClusterService clusterService, String clusterBasePath,
+                        int connectTimeoutMillis, int readTimeoutMillis) {
         this.redirectFunction = redirectFunction;
         this.clusterStarter = clusterStarter;
         this.clusterService = clusterService;
         this.clusterBasePath = clusterBasePath;
+        this.proxyClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
+                .responseTimeout(Duration.ofMillis(readTimeoutMillis));
     }
 
     void apply(HttpServerRoutes routes) {
@@ -115,13 +125,13 @@ class ClusterServerRoutes {
             log.trace(request.uri());
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
             return body(request, ClusterService.MergeSharedObjectInfo.class, response, info ->
-                    ok(response, clusterStarter.nodeIndex != nodeIndex ? clusterService.checkSharedObject(nodeIndex, info) : true));
+                    ok(response, clusterStarter.nodeIndex == nodeIndex || clusterService.checkSharedObject(nodeIndex, info)));
         });
         routes.post(base + "/check-delete-shared-object/{nodeIndex}", (request, response) -> {
             log.trace(request.uri());
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
             return body(request, ClusterService.DeleteSharedObjectInfo.class, response, info ->
-                    ok(response, clusterStarter.nodeIndex != nodeIndex ? clusterService.checkSharedObject(nodeIndex, info) : true));
+                    ok(response, clusterStarter.nodeIndex == nodeIndex || clusterService.checkSharedObject(nodeIndex, info)));
         });
         routes.post(base + "/overwrite-shared-object/{nodeIndex}", (request, response) -> {
             log.trace(request.uri());
@@ -259,23 +269,27 @@ class ClusterServerRoutes {
                 });
     }
 
+    /** relays the request and streams the response through without buffering it */
     private Mono<Void> proxy(HttpServerRequest request, HttpServerResponse response, String uri) {
-        return HttpClient.create()
-                .headers(headers -> headers.add(request.requestHeaders()))
+        return proxyClient
+                .headers(headers -> {
+                    for (var entry : request.requestHeaders()) {
+                        if (!NOT_FORWARDED.contains(entry.getKey().toLowerCase(Locale.ROOT)))
+                            headers.add(entry.getKey(), entry.getValue());
+                    }
+                })
                 .request(request.method())
                 .uri(uri)
                 .send(request.receive().retain())
-                .responseSingle((clientResponse, byteBufMono) ->
-                        byteBufMono.asByteArray().defaultIfEmpty(new byte[0])
-                                .flatMap(body -> {
-                                    response.status(clientResponse.status());
-                                    for (var entry : clientResponse.responseHeaders()) {
-                                        if (!entry.getKey().equalsIgnoreCase("transfer-encoding") &&
-                                                !entry.getKey().equalsIgnoreCase("content-length"))
-                                            response.header(entry.getKey(), entry.getValue());
-                                    }
-                                    return response.sendByteArray(Mono.just(body)).then();
-                                }));
+                .response((clientResponse, body) -> {
+                    response.status(clientResponse.status());
+                    for (var entry : clientResponse.responseHeaders()) {
+                        if (!NOT_FORWARDED.contains(entry.getKey().toLowerCase(Locale.ROOT)))
+                            response.header(entry.getKey(), entry.getValue());
+                    }
+                    return response.send(body.retain());
+                })
+                .then();
     }
 
     private void controller(HttpServerRoutes routes) {

@@ -2,11 +2,7 @@ package com.sds.communicators.driver;
 
 import com.sds.communicators.common.UtilFunc;
 import lombok.extern.slf4j.Slf4j;
-import org.eclipse.milo.opcua.stack.core.types.builtin.DateTime;
-import org.eclipse.milo.opcua.stack.core.types.builtin.LocalizedText;
-import org.eclipse.milo.opcua.stack.core.types.builtin.QualifiedName;
-import org.eclipse.milo.opcua.stack.core.types.builtin.StatusCode;
-import org.eclipse.milo.opcua.stack.core.types.builtin.Variant;
+import org.eclipse.milo.opcua.stack.core.types.builtin.*;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UByte;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.ULong;
@@ -91,8 +87,7 @@ abstract class DriverProtocolOpcua extends DriverProtocol {
             return new Variant(value);
         if (value instanceof Number)
             return new Variant(((Number) value).doubleValue());
-        if (value instanceof List) {
-            var list = (List<?>) value;
+        if (value instanceof List<?> list) {
             var array = new Object[list.size()];
             for (int i = 0; i < list.size(); i++) {
                 var variant = javaToVariant(list.get(i), null);

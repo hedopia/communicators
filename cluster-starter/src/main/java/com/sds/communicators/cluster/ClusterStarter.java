@@ -3,9 +3,11 @@ package com.sds.communicators.cluster;
 import com.sds.communicators.common.type.Position;
 import io.netty.channel.Channel;
 import io.reactivex.rxjava3.functions.Consumer;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
+import reactor.netty.http.HttpProtocol;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
 import reactor.netty.http.server.HttpServerRoutes;
@@ -16,7 +18,9 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class ClusterStarter {
+    @Getter
     int nodeIndex;
+    @Getter
     int quorum;
     int leaderLostTimeoutSeconds;
     int heartbeatSendingIntervalMillis;
@@ -25,21 +29,37 @@ public class ClusterStarter {
     private final ClusterService clusterService;
     private final ClusterServerRoutes clusterServerRoutes;
     private final java.util.function.Consumer<HttpServerRoutes> additionalRoutes;
-    private final ClusterClient clusterClient;
+    /**
+     * -- GETTER --
+     * shared node-to-node HTTP/2 client, so starters built on this one reuse its connections
+     */
+    @Getter
+    private final NodeHttpClient nodeHttpClient;
     private final ClusterInternalClient internalClient;
     private final int serverPort;
 
     private DisposableServer server = null;
     private final Set<Channel> serverChannels = ConcurrentHashMap.newKeySet();
 
+    @Getter
     final Set<String> nodeTargetUrls = new HashSet<>();
     final String nodeUrl;
 
+    @Getter
     Position position = null;
+    @Getter
     boolean isActivated = false;
     boolean isPrepared = false;
 
     private boolean isStarted = false;
+
+    /**
+     * Body limit for an h2c upgrade request. Reactor Netty defaults it to 0, which rejects any
+     * upgrade carrying a body with 413 - and the first internal call to a node is often a POST
+     * (a shared-object merge). Once upgraded the limit no longer applies, since later requests
+     * are HTTP/2 streams.
+     */
+    private static final int H2C_MAX_CONTENT_LENGTH = 64 * 1024 * 1024;
 
     public static Builder builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
         return new Builder(nodeTargetUrls, serverPort, nodeIndex);
@@ -54,8 +74,19 @@ public class ClusterStarter {
         private int heartbeatSendingIntervalMillis;
         private ClusterEvents clusterEvents;
         private java.util.function.Consumer<HttpServerRoutes> routes;
+        @Getter
         private String clusterBasePath;
+        /**
+         * -- GETTER --
+         * connect timeout configured so far, for starters that create their own HTTP clients
+         */
+        @Getter
         private int connectTimeoutMillis;
+        /**
+         * -- GETTER --
+         * read timeout configured so far, for starters that create their own HTTP clients
+         */
+        @Getter
         private int readTimeoutMillis;
 
         private Builder(Set<String> nodeTargetUrls, int serverPort, int nodeIndex) {
@@ -102,10 +133,6 @@ public class ClusterStarter {
             return this;
         }
 
-        public String getClusterBasePath() {
-            return clusterBasePath;
-        }
-
         public ClusterStarter.Builder setConnectTimeoutMillis(int connectTimeoutMillis) {
             this.connectTimeoutMillis = connectTimeoutMillis;
             return this;
@@ -142,8 +169,8 @@ public class ClusterStarter {
                            String clusterBasePath,
                            int connectTimeoutMillis,
                            int readTimeoutMillis) throws Exception {
-        clusterClient = new ClusterClient(connectTimeoutMillis, readTimeoutMillis);
-        internalClient = new ClusterInternalClient(clusterClient, clusterBasePath);
+        nodeHttpClient = new NodeHttpClient(connectTimeoutMillis, readTimeoutMillis);
+        internalClient = new ClusterInternalClient(nodeHttpClient, clusterBasePath);
         this.nodeIndex = nodeIndex;
         this.quorum = quorum;
         this.leaderLostTimeoutSeconds = leaderLostTimeoutSeconds;
@@ -184,7 +211,8 @@ public class ClusterStarter {
 
         redirectFunction = new RedirectFunction(this.nodeTargetUrls, internalClient, this);
         clusterService = new ClusterService(this, redirectFunction, internalClient);
-        clusterServerRoutes = new ClusterServerRoutes(redirectFunction, this, clusterService, clusterBasePath);
+        clusterServerRoutes = new ClusterServerRoutes(redirectFunction, this, clusterService, clusterBasePath,
+                connectTimeoutMillis, readTimeoutMillis);
         clusterService.clusterEvents.addAll(clusterEvents);
         this.additionalRoutes = routes;
     }
@@ -207,6 +235,10 @@ public class ClusterStarter {
         if (httpServer) {
             server = HttpServer.create()
                     .port(serverPort)
+                    // h2c alongside HTTP/1.1 on the same port: node-to-node calls upgrade and
+                    // multiplex, browsers and any HTTP/1.1 client keep working unchanged
+                    .protocol(HttpProtocol.H2C, HttpProtocol.HTTP11)
+                    .httpRequestDecoder(spec -> spec.h2cMaxContentLength(H2C_MAX_CONTENT_LENGTH))
                     .doOnConnection(c -> {
                         serverChannels.add(c.channel());
                         c.onDispose(() -> serverChannels.remove(c.channel()));
@@ -256,26 +288,11 @@ public class ClusterStarter {
             }
             server = null;
         }
-        clusterClient.dispose();
+        nodeHttpClient.dispose();
         isStarted = false;
         log.info("cluster-starter disposed");
     }
 
-    public int getNodeIndex() {
-        return nodeIndex;
-    }
-    public int getQuorum() {
-        return quorum;
-    }
-    public Set<String> getNodeTargetUrls() {
-        return nodeTargetUrls;
-    }
-    public Position getPosition() {
-        return position;
-    }
-    public boolean isActivated() {
-        return isActivated;
-    }
     public Set<Integer> getCluster() {
         return clusterService.getCluster();
     }
@@ -324,14 +341,6 @@ public class ClusterStarter {
 
     public <U> void parallelExecute(Collection<U> collection, Consumer<U> consumer) {
         redirectFunction.parallelExecute(collection, consumer);
-    }
-
-    public <U> void loadBalancedClient(Set<String> urls, Class<U> api, Consumer<U> run) throws Throwable {
-        clusterClient.loadBalancedClient(urls, api, run);
-    }
-
-    public <U> U getClient(String url, Class<U> api) {
-        return clusterClient.getClient(url, api);
     }
 
     public Position getPosition(int nodeIndex) throws Throwable {

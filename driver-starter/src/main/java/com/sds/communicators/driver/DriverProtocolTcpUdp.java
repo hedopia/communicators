@@ -29,7 +29,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
-abstract class DriverProtocolTcpUdp extends DriverProtocol {
+public abstract class DriverProtocolTcpUdp extends DriverProtocol {
     private final BlockingQueue<Triplet<String, Value[], Long>> requestedDataQueue = new ArrayBlockingQueue<>(10);
     private String host;
     private int port;
@@ -129,8 +129,7 @@ abstract class DriverProtocolTcpUdp extends DriverProtocol {
             outbound = (NettyOutbound) nonPeriodicObject;
         try {
             var obj = objectMapper.readValue(requestInfo, Object.class);
-            if (obj instanceof Map) {
-                var map = (Map<?, ?>) obj;
+            if (obj instanceof Map<?, ?> map) {
                 var req = new RequestInfo(map.get("message"), map.get("host"), map.get("port"));
                 log.trace("sendString as RequestInfo: {}", requestInfo);
                 sendString(req);

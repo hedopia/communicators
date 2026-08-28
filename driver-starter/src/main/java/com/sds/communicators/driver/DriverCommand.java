@@ -26,7 +26,7 @@ class DriverCommand {
     private final Map<String, CommandFunctions> functionMap = new HashMap<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final Map<Integer, Set<Command>> periodGroupMap = new HashMap<>();
-    private DriverProtocol protocol;
+    private final DriverProtocol protocol;
 
     DriverCommand(String defaultScript, DriverProtocol protocol) throws Exception {
         pythonEngine.set("log", LoggerFactory.getLogger(ScriptLogger.class));

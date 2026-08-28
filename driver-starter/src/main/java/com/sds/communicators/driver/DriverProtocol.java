@@ -14,6 +14,7 @@ import io.reactivex.rxjava3.functions.Action;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subjects.PublishSubject;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.graalvm.polyglot.Value;
 import org.javatuples.Triplet;
@@ -30,8 +31,9 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @EqualsAndHashCode(of = "deviceId")
-abstract class DriverProtocol {
+public abstract class DriverProtocol {
     private DriverService driverService;
+    @Getter
     private StatusCode status = null;
     private int retryConnect = 0;
     private int initialCommandDelay;
@@ -45,39 +47,29 @@ abstract class DriverProtocol {
     protected final ObjectMapper objectMapper = new ObjectMapper();
 
     DriverCommand driverCommand;
+    @Getter
     String deviceId;
+    @Getter
     Device device;
     boolean isConnectionLostOccur = false;
     PublishSubject<List<Response>> onResponse = PublishSubject.create();
 
     static DriverProtocol build(DriverService driverService, String defaultScript, Device device) throws Exception {
         String protocolType = device.getConnectionUrl().split("://")[0];
-        switch (protocolType) {
-            case "tcp-client":
-                return new DriverProtocolTcpClient().create(driverService, defaultScript, device);
-            case "tcp-server":
-                return new DriverProtocolTcpServer().create(driverService, defaultScript, device);
-            case "udp-client":
-                return new DriverProtocolUdpClient().create(driverService, defaultScript, device);
-            case "udp-server":
-                return new DriverProtocolUdpServer().create(driverService, defaultScript, device);
-            case "modbus-client":
-                return new DriverProtocolModbusClient().create(driverService, defaultScript, device);
-            case "modbus-server":
-                return new DriverProtocolModbusServer().create(driverService, defaultScript, device);
-            case "opcua-client":
-                return new DriverProtocolOpcuaClient().create(driverService, defaultScript, device);
-            case "opcua-server":
-                return new DriverProtocolOpcuaServer().create(driverService, defaultScript, device);
-            case "http-client":
-                return new DriverProtocolHttpClient().create(driverService, defaultScript, device);
-            case "http-server":
-                return new DriverProtocolHttpServer().create(driverService, defaultScript, device);
-            case "dummy":
-                return new DriverProtocolDummy().create(driverService, defaultScript, device);
-            default:
-                throw new Exception("[" + device.getId() + "] not found protocol: " + device.getConnectionUrl());
-        }
+        return switch (protocolType) {
+            case "tcp-client" -> new DriverProtocolTcpClient().create(driverService, defaultScript, device);
+            case "tcp-server" -> new DriverProtocolTcpServer().create(driverService, defaultScript, device);
+            case "udp-client" -> new DriverProtocolUdpClient().create(driverService, defaultScript, device);
+            case "udp-server" -> new DriverProtocolUdpServer().create(driverService, defaultScript, device);
+            case "modbus-client" -> new DriverProtocolModbusClient().create(driverService, defaultScript, device);
+            case "modbus-server" -> new DriverProtocolModbusServer().create(driverService, defaultScript, device);
+            case "opcua-client" -> new DriverProtocolOpcuaClient().create(driverService, defaultScript, device);
+            case "opcua-server" -> new DriverProtocolOpcuaServer().create(driverService, defaultScript, device);
+            case "http-client" -> new DriverProtocolHttpClient().create(driverService, defaultScript, device);
+            case "http-server" -> new DriverProtocolHttpServer().create(driverService, defaultScript, device);
+            case "dummy" -> new DriverProtocolDummy().create(driverService, defaultScript, device);
+            default -> throw new Exception("[" + device.getId() + "] not found protocol: " + device.getConnectionUrl());
+        };
     }
 
     protected DriverProtocol create(DriverService driverService, String defaultScript, Device device) throws Exception {
@@ -140,18 +132,6 @@ abstract class DriverProtocol {
             log.error("[{}] cmdId={}, received command not match, ignore received message, received cmdId={}", deviceId, cmdId, data.getValue0());
             return null;
         }
-    }
-
-    public StatusCode getStatus() {
-        return status;
-    }
-
-    public String getDeviceId() {
-        return deviceId;
-    }
-
-    public Device getDevice() {
-        return device;
     }
 
     protected Value stringToPyObject(String s) {

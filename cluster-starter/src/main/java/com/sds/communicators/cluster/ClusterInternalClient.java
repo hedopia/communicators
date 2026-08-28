@@ -1,9 +1,9 @@
 package com.sds.communicators.cluster;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
 import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
-import feign.Param;
-import feign.RequestLine;
 
 import java.util.Map;
 import java.util.Set;
@@ -12,128 +12,92 @@ import java.util.Set;
  * HTTP client for cluster internal node-to-node communication.
  * Calls go to {@code {nodeUrl}{clusterBasePath}/internal/...} on the node's regular
  * HTTP server, so internal traffic shares the port and thread pool of the public API.
- * Payloads are Jackson JSON, matching what the routes in ClusterServerRoutes expect.
+ * <p>
+ * The JDK client is configured for HTTP/2, which over plaintext {@code http://} means h2c
+ * negotiated with an HTTP/1.1 {@code Upgrade}. The upgrade happens once per connection; every
+ * later request to that node is a multiplexed stream on the same connection, so the heartbeat
+ * and shared-object fan-out no longer need a connection each. A node that only speaks HTTP/1.1
+ * (an older build during a rolling deploy) simply answers without upgrading and this client
+ * falls back, which prior-knowledge h2c could not do.
  */
 class ClusterInternalClient {
     static final String INTERNAL_PATH = "/internal";
 
-    private final ClusterClient clusterClient;
-    private final String clusterBasePath;
+    private final NodeHttpClient client;
+    private final String basePath;
 
-    ClusterInternalClient(ClusterClient clusterClient, String clusterBasePath) {
-        this.clusterClient = clusterClient;
-        this.clusterBasePath = clusterBasePath;
-    }
-
-    private Api api(String url) {
-        return clusterClient.getClient(url + clusterBasePath + INTERNAL_PATH, Api.class);
+    ClusterInternalClient(NodeHttpClient client, String clusterBasePath) {
+        this.client = client;
+        this.basePath = clusterBasePath + INTERNAL_PATH;
     }
 
     void heartbeat(String url, int nodeIndex, Position position, long lastTransitionTime, Map<Integer, Long> sharedObjectSeq) {
-        api(url).heartbeat(new HeartbeatRequest(nodeIndex, position, lastTransitionTime, sharedObjectSeq));
+        call(url, "PUT", "/heartbeat", new HeartbeatRequest(nodeIndex, position, lastTransitionTime, sharedObjectSeq), null);
     }
 
     NodeStatus getNodeStatus(String url) {
-        return api(url).getNodeStatus();
+        return call(url, "GET", "/node-status", null, type(NodeStatus.class));
     }
 
     void setToLeader(String url) {
-        api(url).setToLeader();
+        call(url, "PUT", "/set-to-leader", null, null);
     }
 
     void clusterDeleted(String url, int nodeIndex) {
-        api(url).clusterDeleted(nodeIndex);
+        call(url, "DELETE", "/cluster-deleted/" + nodeIndex, null, null);
     }
 
     void removeSharedObject(String url, int nodeIndex) {
-        api(url).removeSharedObject(nodeIndex);
+        call(url, "DELETE", "/remove-shared-object/" + nodeIndex, null, null);
     }
 
     int getNodeIndex(String url) {
-        return api(url).getNodeIndex();
+        return call(url, "GET", "/node-index", null, type(Integer.class));
     }
 
     void mergeSharedObjectToLeader(String url, int nodeIndex, ClusterService.MergeSharedObjectInfo mergeSharedObjectInfo) {
-        api(url).mergeSharedObjectToLeader(nodeIndex, mergeSharedObjectInfo);
+        call(url, "POST", "/merge-shared-object-to-leader/" + nodeIndex, mergeSharedObjectInfo, null);
     }
 
     void deleteSharedObjectToLeader(String url, int nodeIndex, ClusterService.DeleteSharedObjectInfo deleteSharedObjectInfo) {
-        api(url).deleteSharedObjectToLeader(nodeIndex, deleteSharedObjectInfo);
+        call(url, "POST", "/delete-shared-object-to-leader/" + nodeIndex, deleteSharedObjectInfo, null);
     }
 
     boolean checkMergeSharedObject(String url, int nodeIndex, ClusterService.MergeSharedObjectInfo mergeSharedObjectInfo) {
-        return api(url).checkMergeSharedObject(nodeIndex, mergeSharedObjectInfo);
+        return call(url, "POST", "/check-merge-shared-object/" + nodeIndex, mergeSharedObjectInfo, type(Boolean.class));
     }
 
     boolean checkDeleteSharedObject(String url, int nodeIndex, ClusterService.DeleteSharedObjectInfo deleteSharedObjectInfo) {
-        return api(url).checkDeleteSharedObject(nodeIndex, deleteSharedObjectInfo);
+        return call(url, "POST", "/check-delete-shared-object/" + nodeIndex, deleteSharedObjectInfo, type(Boolean.class));
     }
 
     void overwriteSharedObject(String url, int nodeIndex, ClusterService.MergeSharedObjectInfo sharedObjectInfo) {
-        api(url).overwriteSharedObject(nodeIndex, sharedObjectInfo);
+        call(url, "POST", "/overwrite-shared-object/" + nodeIndex, sharedObjectInfo, null);
     }
 
     ClusterService.MergeSharedObjectInfo getSharedObject(String url) {
-        return api(url).getSharedObject();
+        return call(url, "GET", "/shared-object", null, type(ClusterService.MergeSharedObjectInfo.class));
     }
 
     ClusterService.MergeSharedObjectInfo getSharedObject(String url, int nodeIndex) {
-        return api(url).getSharedObjectOf(nodeIndex);
+        return call(url, "GET", "/shared-object/" + nodeIndex, null, type(ClusterService.MergeSharedObjectInfo.class));
     }
 
     void syncSharedObject(String url, int nodeIndex, ClusterService.SharedObject sharedObject) {
-        api(url).syncSharedObject(nodeIndex, sharedObject);
+        call(url, "POST", "/sync-shared-object/" + nodeIndex, sharedObject, null);
     }
 
     Set<Integer> checkSharedObjectSeq(String url, Map<Integer, Long> sharedObjectSeq) {
-        return api(url).checkSharedObjectSeq(sharedObjectSeq);
+        return call(url, "POST", "/check-shared-object-seq", sharedObjectSeq,
+                client.type(new TypeReference<Set<Integer>>() {}));
     }
 
-    interface Api {
-        @RequestLine("PUT /heartbeat")
-        void heartbeat(HeartbeatRequest request);
+    private JavaType type(Class<?> clazz) {
+        return client.type(clazz);
+    }
 
-        @RequestLine("GET /node-status")
-        NodeStatus getNodeStatus();
-
-        @RequestLine("PUT /set-to-leader")
-        void setToLeader();
-
-        @RequestLine("DELETE /cluster-deleted/{nodeIndex}")
-        void clusterDeleted(@Param("nodeIndex") int nodeIndex);
-
-        @RequestLine("DELETE /remove-shared-object/{nodeIndex}")
-        void removeSharedObject(@Param("nodeIndex") int nodeIndex);
-
-        @RequestLine("GET /node-index")
-        int getNodeIndex();
-
-        @RequestLine("POST /merge-shared-object-to-leader/{nodeIndex}")
-        void mergeSharedObjectToLeader(@Param("nodeIndex") int nodeIndex, ClusterService.MergeSharedObjectInfo info);
-
-        @RequestLine("POST /delete-shared-object-to-leader/{nodeIndex}")
-        void deleteSharedObjectToLeader(@Param("nodeIndex") int nodeIndex, ClusterService.DeleteSharedObjectInfo info);
-
-        @RequestLine("POST /check-merge-shared-object/{nodeIndex}")
-        boolean checkMergeSharedObject(@Param("nodeIndex") int nodeIndex, ClusterService.MergeSharedObjectInfo info);
-
-        @RequestLine("POST /check-delete-shared-object/{nodeIndex}")
-        boolean checkDeleteSharedObject(@Param("nodeIndex") int nodeIndex, ClusterService.DeleteSharedObjectInfo info);
-
-        @RequestLine("POST /overwrite-shared-object/{nodeIndex}")
-        void overwriteSharedObject(@Param("nodeIndex") int nodeIndex, ClusterService.MergeSharedObjectInfo info);
-
-        @RequestLine("GET /shared-object")
-        ClusterService.MergeSharedObjectInfo getSharedObject();
-
-        @RequestLine("GET /shared-object/{nodeIndex}")
-        ClusterService.MergeSharedObjectInfo getSharedObjectOf(@Param("nodeIndex") int nodeIndex);
-
-        @RequestLine("POST /sync-shared-object/{nodeIndex}")
-        void syncSharedObject(@Param("nodeIndex") int nodeIndex, ClusterService.SharedObject sharedObject);
-
-        @RequestLine("POST /check-shared-object-seq")
-        Set<Integer> checkSharedObjectSeq(Map<Integer, Long> sharedObjectSeq);
+    private <T> T call(String url, String method, String path, Object body, JavaType responseType) {
+        return client.call(url + basePath + path, method, body, responseType);
     }
 
     /** heartbeat payload; sent as a single JSON body instead of path segments */

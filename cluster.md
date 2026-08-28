@@ -7,6 +7,7 @@
 - If the leader fails, the participating node with the lowest `nodeIndex` is elected.
 - Public REST endpoints and redirect proxying use Reactor Netty HTTP.
 - Internal node communication uses HTTP calls with Jackson-serialized payloads, served on the same port as the public API.
+- The server offers h2c next to HTTP/1.1, and internal calls use it, so all node-to-node traffic multiplexes over one connection per peer.
 - Route handlers are blocking and run on a per-request worker thread, so event loops stay free for I/O.
 
 ## Architecture
@@ -15,9 +16,9 @@
 ClusterStarter          Entry point and lifecycle owner for the HTTP server
 ClusterServerRoutes     Public cluster REST API, redirect proxy, and internal node-to-node routes
 ClusterService          Leader/follower transitions, heartbeats, and shared-object synchronization
+NodeHttpClient          Shared JDK HttpClient (h2c) for all node-to-node calls
 ClusterInternalClient   Typed client for the internal node-to-node routes
 RouteDispatcher         Runs each request's handler on its own worker thread
-ClusterClient           Generic Feign REST client and load-balanced client
 RedirectFunction        Leader/index dispatch, election, retry, and parallel-execution utilities
 ClusterEvents           Event registration API
 ```
@@ -185,11 +186,9 @@ cluster.toLeaderFunc(url -> { }, "action-name");
 cluster.toIndexFunc(nodeIndex, url -> { }, "action-name");
 cluster.toAllFunc(url -> { }, "action-name");
 cluster.parallelExecute(collection, item -> { });
-cluster.getClient(url, Api.class);
-cluster.loadBalancedClient(urls, Api.class, api -> { });
 ```
 
-`toLeaderFuncConfirmed` retries and may initiate an election. `getClient` creates a Feign client.
+`toLeaderFuncConfirmed` retries and may initiate an election.
 
 ## REST API
 
@@ -230,7 +229,17 @@ Heartbeat, node status, leader changes, cluster deletion, and shared-object get/
 operations are served under `{clusterBasePath}/internal` on the node's own HTTP port.
 
 - Payload: Jackson JSON
+- Transport: h2c. The server is bound with `HttpProtocol.H2C, HttpProtocol.HTTP11`, and the client is a
+  `java.net.http.HttpClient` set to `HTTP_2`, which over plaintext negotiates h2c with an HTTP/1.1 `Upgrade`.
+  The upgrade happens once per connection; later calls are multiplexed streams, so concurrency no longer costs
+  connections. A node still speaking only HTTP/1.1 answers without upgrading and the client falls back, which
+  keeps rolling deploys working.
 - Timeouts: `connectTimeoutMillis` and `readTimeoutMillis`
+- Upgrade body limit: Reactor Netty rejects an h2c upgrade request that carries a body unless
+  `h2cMaxContentLength` is raised from its default of `0`, and the first internal call to a node is often a
+  POST. `ClusterStarter` sets 64 MB; an application that mounts the routes on its own server must do the
+  same (`server.netty.h2c-max-content-length` under Spring Boot). The limit only covers the upgrade request:
+  once the connection is HTTP/2 it no longer applies.
 - Failure mapping: rejected preconditions answer `400` with a plain-text reason
 
 These routes are part of `getRoutes()`. They are reachable by anything that can reach the HTTP port, so restrict that

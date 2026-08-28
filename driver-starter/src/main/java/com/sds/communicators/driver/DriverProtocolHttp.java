@@ -108,7 +108,7 @@ abstract class DriverProtocolHttp extends DriverProtocol {
                 Object javaBody = body.hasArrayElements() ? body.as(List.class) : body.toString();
                 ret = "\"" + objectMapper.writeValueAsString(javaBody) + "\"";
             } catch (JsonProcessingException e) {
-                ret = "\"" + body.toString() + "\"";
+                ret = "\"" + body + "\"";
             }
         }
         return ret;

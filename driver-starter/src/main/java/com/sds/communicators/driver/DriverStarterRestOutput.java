@@ -2,13 +2,18 @@ package com.sds.communicators.driver;
 
 import com.sds.communicators.cluster.ClusterEvents;
 import com.sds.communicators.cluster.ClusterStarter;
+import com.sds.communicators.common.LoadBalancer;
 import com.sds.communicators.common.struct.Response;
 import com.sds.communicators.common.struct.Status;
-import feign.Param;
-import feign.RequestLine;
 import lombok.extern.slf4j.Slf4j;
 import reactor.netty.http.server.HttpServerRoutes;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -16,7 +21,11 @@ import java.util.function.Consumer;
 @Slf4j
 public class DriverStarterRestOutput extends DriverStarter {
 
-    private final Set<String> restOutputTargetUrls;
+    /** fixed order so that the LoadBalancer's indexes always mean the same target */
+    private final List<String> restOutputTargetUrls;
+    private final LoadBalancer loadBalancer;
+    private final HttpClient httpClient;
+    private final Duration readTimeout;
     private final String responsePath;
     private final String responseFormat;
     private final String statusPath;
@@ -83,7 +92,16 @@ public class DriverStarterRestOutput extends DriverStarter {
                 routes,
                 clusterStarterBuilder);
 
-        this.restOutputTargetUrls = restOutputTargetUrls;
+        this.restOutputTargetUrls = List.copyOf(restOutputTargetUrls);
+        this.loadBalancer = new LoadBalancer(this.restOutputTargetUrls.size());
+        this.readTimeout = Duration.ofMillis(clusterStarterBuilder.getReadTimeoutMillis());
+        // HTTP/1.1 on purpose: these targets are third-party systems. An h2c upgrade carries the
+        // POST body, and a server that caps the upgrade size rejects it outright, so the plain
+        // protocol is the safe default here (node-to-node traffic uses h2c instead).
+        this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofMillis(clusterStarterBuilder.getConnectTimeoutMillis()))
+                .build();
         this.responsePath = responsePath;
         this.responseFormat = responseFormat;
         this.statusPath = statusPath;
@@ -92,14 +110,9 @@ public class DriverStarterRestOutput extends DriverStarter {
 
     @Override
     protected void sendResponse(List<Response> responses, String driverId, int nodeIndex) throws Exception {
+        var body = "[" + String.join(",", getResponseFormat(responses, driverId, nodeIndex, responseFormat)) + "]";
         try {
-            getClusterStarter().loadBalancedClient(restOutputTargetUrls,
-                    DriverRestClientApi.class,
-                    client -> {
-                        var response = String.join(",", getResponseFormat(responses, driverId, nodeIndex, responseFormat));
-                        client.sendResponse(responsePath, "[" + response + "]");
-                    }
-            );
+            post(responsePath, body);
         } catch (Throwable e) {
             throw new Exception("rest send responses failed", e);
         }
@@ -108,21 +121,36 @@ public class DriverStarterRestOutput extends DriverStarter {
     @Override
     protected void sendStatus(Status deviceStatus, String driverId, int nodeIndex) throws Exception {
         try {
-            getClusterStarter().loadBalancedClient(restOutputTargetUrls,
-                    DriverRestClientApi.class,
-                    client -> client.sendStatus(statusPath,
-                            getStatusFormat(deviceStatus, driverId, nodeIndex, statusFormat))
-            );
+            post(statusPath, getStatusFormat(deviceStatus, driverId, nodeIndex, statusFormat));
         } catch (Throwable e) {
             throw new Exception("rest send status failed", e);
         }
     }
 
-    interface DriverRestClientApi {
-        @RequestLine("POST {responsePath}")
-        void sendResponse(@Param("responsePath") String responsePath, String response);
+    @Override
+    public void dispose() {
+        super.dispose();
+        httpClient.close();
+    }
 
-        @RequestLine("POST {statusPath}")
-        void sendStatus(@Param("statusPath") String statusPath, String status);
+    /**
+     * Posts to one of the configured targets. The LoadBalancer spreads the load, remembers which
+     * targets have been failing so it can skip them, and falls back to a skipped one when every
+     * other target fails too; it returns the last error when none succeeded.
+     */
+    private void post(String path, String body) throws Throwable {
+        var failure = loadBalancer.run(index -> send(restOutputTargetUrls.get(index) + path, body));
+        if (failure != null) throw failure;
+    }
+
+    private void send(String uri, String body) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create(uri))
+                .timeout(readTimeout)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() / 100 != 2)
+            throw new Exception("POST " + uri + " failed, status " + response.statusCode() + "::" + response.body());
     }
 }

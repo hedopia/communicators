@@ -7,6 +7,14 @@ spring:
 
 server:
   port: 4001
+  # h2c on the same port: node-to-node calls upgrade to HTTP/2 and multiplex,
+  # browsers and HTTP/1.1 clients are unaffected (Boot picks H2C when no SSL is set)
+  http2:
+    enabled: true
+  netty:
+    # reactor-netty rejects an h2c upgrade request carrying a body (default 0B) with 413,
+    # and the first internal call to a node is often a POST; the limit only covers the upgrade
+    h2c-max-content-length: 64MB
 
 logging:
   file:

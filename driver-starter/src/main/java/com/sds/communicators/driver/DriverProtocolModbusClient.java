@@ -1,14 +1,7 @@
 package com.sds.communicators.driver;
 
 import com.digitalpetri.modbus.client.ModbusTcpClient;
-import com.digitalpetri.modbus.pdu.ReadCoilsRequest;
-import com.digitalpetri.modbus.pdu.ReadDiscreteInputsRequest;
-import com.digitalpetri.modbus.pdu.ReadHoldingRegistersRequest;
-import com.digitalpetri.modbus.pdu.ReadInputRegistersRequest;
-import com.digitalpetri.modbus.pdu.WriteMultipleCoilsRequest;
-import com.digitalpetri.modbus.pdu.WriteMultipleRegistersRequest;
-import com.digitalpetri.modbus.pdu.WriteSingleCoilRequest;
-import com.digitalpetri.modbus.pdu.WriteSingleRegisterRequest;
+import com.digitalpetri.modbus.pdu.*;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import lombok.ToString;

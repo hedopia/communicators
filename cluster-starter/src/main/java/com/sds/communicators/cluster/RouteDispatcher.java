@@ -64,51 +64,46 @@ public final class RouteDispatcher {
         return source.publishOn(WORKER);
     }
 
-    private static final class PerRequestThreadRoutes implements HttpServerRoutes {
-        private final HttpServerRoutes delegate;
-
-        private PerRequestThreadRoutes(HttpServerRoutes delegate) {
-            this.delegate = delegate;
-        }
+    private record PerRequestThreadRoutes(HttpServerRoutes delegate) implements HttpServerRoutes {
 
         @Override
-        public HttpServerRoutes route(Predicate<? super HttpServerRequest> condition,
-                                      BiFunction<? super HttpServerRequest, ? super HttpServerResponse, ? extends Publisher<Void>> handler) {
-            delegate.route(condition, (request, response) ->
-                    // defer so the handler body (the blocking part) runs at subscription time,
-                    // which subscribeOn places on a worker thread
-                    Mono.defer(() -> Mono.from(handler.apply(request, response)))
-                            .subscribeOn(WORKER));
-            return this;
-        }
+            public HttpServerRoutes route(Predicate<? super HttpServerRequest> condition,
+                                          BiFunction<? super HttpServerRequest, ? super HttpServerResponse, ? extends Publisher<Void>> handler) {
+                delegate.route(condition, (request, response) ->
+                        // defer so the handler body (the blocking part) runs at subscription time,
+                        // which subscribeOn places on a worker thread
+                        Mono.defer(() -> Mono.from(handler.apply(request, response)))
+                                .subscribeOn(WORKER));
+                return this;
+            }
 
-        @Override
-        public HttpServerRoutes directory(String uri, Path directory, Function<HttpServerResponse, HttpServerResponse> interceptor) {
-            delegate.directory(uri, directory, interceptor);
-            return this;
-        }
+            @Override
+            public HttpServerRoutes directory(String uri, Path directory, Function<HttpServerResponse, HttpServerResponse> interceptor) {
+                delegate.directory(uri, directory, interceptor);
+                return this;
+            }
 
-        @Override
-        public HttpServerRoutes removeIf(Predicate<? super HttpRouteHandlerMetadata> condition) {
-            delegate.removeIf(condition);
-            return this;
-        }
+            @Override
+            public HttpServerRoutes removeIf(Predicate<? super HttpRouteHandlerMetadata> condition) {
+                delegate.removeIf(condition);
+                return this;
+            }
 
-        @Override
-        public HttpServerRoutes comparator(Comparator<HttpRouteHandlerMetadata> comparator) {
-            delegate.comparator(comparator);
-            return this;
-        }
+            @Override
+            public HttpServerRoutes comparator(Comparator<HttpRouteHandlerMetadata> comparator) {
+                delegate.comparator(comparator);
+                return this;
+            }
 
-        @Override
-        public HttpServerRoutes noComparator() {
-            delegate.noComparator();
-            return this;
-        }
+            @Override
+            public HttpServerRoutes noComparator() {
+                delegate.noComparator();
+                return this;
+            }
 
-        @Override
-        public Publisher<Void> apply(HttpServerRequest request, HttpServerResponse response) {
-            return delegate.apply(request, response);
+            @Override
+            public Publisher<Void> apply(HttpServerRequest request, HttpServerResponse response) {
+                return delegate.apply(request, response);
+            }
         }
-    }
 }
