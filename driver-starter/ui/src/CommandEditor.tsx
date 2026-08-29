@@ -33,15 +33,15 @@ function CommandEditor({
       <div className="command-card-header">
         <div>
           <span className="item-index">Command {index + 1}</span>
-          <strong>{command.id || "이름 없는 command"}</strong>
+          <strong>{command.id || "unnamed command"}</strong>
           <span className="command-type-chip">{command.type}</span>
         </div>
         <div className="toolbar">
           <button type="button" className="small" onClick={onDuplicate}>
-            복제
+            duplicate
           </button>
           <button type="button" className="danger small" onClick={onRemove}>
-            삭제
+            remove
           </button>
         </div>
       </div>
@@ -78,7 +78,7 @@ function CommandEditor({
             value={command.order}
             onChange={(event) => setNumber("order", event.target.value)}
           />
-          <small>작은 값부터 실행됩니다.</small>
+          <small>Executed in ascending order.</small>
         </label>
         <label className="form-field">
           <span>Period group (ms)</span>
@@ -87,7 +87,7 @@ function CommandEditor({
             value={command.periodGroup}
             onChange={(event) => setNumber("periodGroup", event.target.value)}
           />
-          <small>음수는 event/non-periodic command입니다.</small>
+          <small>A negative value means an event / non-periodic command.</small>
         </label>
         <label className="form-field">
           <span>After delay (ms)</span>
@@ -112,12 +112,12 @@ function CommandEditor({
           <textarea
             className="request-info-input"
             value={command.requestInfo}
-            placeholder='프로토콜 요청 형식에 맞는 문자열 또는 JSON (예: ["ns=2;s=Tag1"])'
+            placeholder='String or JSON matching the protocol request format (e.g. ["ns=2;s=Tag1"])'
             onChange={(event) => patch({ requestInfo: event.target.value })}
             spellCheck={false}
           />
           <small>
-            request-info function을 사용하는 경우 기본값으로 사용되며, 비워둘 수도 있습니다.
+            Used as the default when a request-info function is present, and may be left empty.
           </small>
         </label>
       </div>

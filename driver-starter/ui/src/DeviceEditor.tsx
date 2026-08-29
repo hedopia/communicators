@@ -83,13 +83,13 @@ function DeviceEditor({
         <div className="device-card-identity">
           <span className="item-index">Device {index + 1}</span>
           <div>
-            <h3>{draft.id || "이름 없는 device"}</h3>
+            <h3>{draft.id || "unnamed device"}</h3>
             <span>{definition.label}</span>
           </div>
         </div>
         <div className="toolbar">
           <button type="button" className="small" onClick={onDuplicate}>
-            Device 복제
+            Duplicate device
           </button>
           <button
             type="button"
@@ -97,7 +97,7 @@ function DeviceEditor({
             onClick={onRemove}
             disabled={total <= 1}
           >
-            Device 삭제
+            Remove device
           </button>
         </div>
       </div>
@@ -105,8 +105,8 @@ function DeviceEditor({
       <section className="editor-section">
         <div className="section-title-row">
           <div>
-            <h4>Device 기본 설정</h4>
-            <p>Java Device class의 필드를 각각 설정합니다.</p>
+            <h4>Device basic settings</h4>
+            <p>Each field of the Java Device class is configured individually.</p>
           </div>
         </div>
         <div className="form-grid">
@@ -118,14 +118,14 @@ function DeviceEditor({
               placeholder="device1"
               onChange={(event) => patch({ id: event.target.value })}
             />
-            <small>영문, 숫자, 밑줄만 사용할 수 있습니다.</small>
+            <small>Only letters, digits, and underscores are allowed.</small>
           </label>
           <label className="form-field">
             <span>Group</span>
             <input
               type="text"
               value={draft.group}
-              placeholder="같은 노드에 배치할 group"
+              placeholder="group placed on the same node"
               onChange={(event) => patch({ group: event.target.value })}
             />
           </label>
@@ -136,7 +136,7 @@ function DeviceEditor({
               value={draft.responseTimeout}
               onChange={(event) => setNumber("responseTimeout", event.target.value)}
             />
-            <small>0 이하는 무제한입니다.</small>
+            <small>Zero or less means unlimited.</small>
           </label>
           <label className="form-field">
             <span>Max retry connect</span>
@@ -145,7 +145,7 @@ function DeviceEditor({
               value={draft.maxRetryConnect}
               onChange={(event) => setNumber("maxRetryConnect", event.target.value)}
             />
-            <small>음수는 무한 재시도입니다.</small>
+            <small>A negative value retries forever.</small>
           </label>
           <label className="form-field">
             <span>Retry delay (ms)</span>
@@ -182,7 +182,7 @@ function DeviceEditor({
                 checked={draft.connectionCommand}
                 onChange={(event) => patch({ connectionCommand: event.target.checked })}
               />
-              요청할 때만 연결
+              Connect only while a request runs
             </span>
           </label>
           <label className="form-field span-2">
@@ -197,7 +197,7 @@ function DeviceEditor({
         </div>
         {Object.keys(draft.extra).length > 0 && (
           <div className="preserved-fields">
-            가져온 파일의 추가 필드 {Object.keys(draft.extra).join(", ")}도 저장 시 유지됩니다.
+            Extra fields of the imported file ({Object.keys(draft.extra).join(", ")}) are kept when saving.
           </div>
         )}
       </section>
@@ -211,7 +211,7 @@ function DeviceEditor({
         <div className="section-title-row">
           <div>
             <h4>Protocol script</h4>
-            <p>Protocol 수준의 packet 처리 함수를 Python으로 작성합니다.</p>
+            <p>Protocol-level packet handling functions are written in Python.</p>
           </div>
         </div>
         <CodeEditor
@@ -227,15 +227,15 @@ function DeviceEditor({
         <div className="section-title-row">
           <div>
             <h4>Commands</h4>
-            <p>각 Command의 실행 조건, requestInfo와 Python cmdScript를 설정합니다.</p>
+            <p>Execution conditions, requestInfo, and the Python cmdScript of each Command.</p>
           </div>
           <button type="button" className="primary" onClick={addCommand}>
-            + Command 추가
+            + Add command
           </button>
         </div>
         {draft.commands.length === 0 ? (
           <div className="empty-editor-state">
-            등록된 Command가 없습니다. 필요한 경우 Command를 추가하세요.
+            No command is registered. Add a command if one is needed.
           </div>
         ) : (
           <div className="command-list">

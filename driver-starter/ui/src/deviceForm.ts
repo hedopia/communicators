@@ -50,51 +50,51 @@ export interface ProtocolDefinition {
 
 const connectionLostOption: OptionDefinition = {
   key: "connectionLostOnException",
-  label: "예외 발생 시 연결 끊김 처리",
+  label: "Treat exception as connection lost",
   kind: "boolean",
-  hint: "미설정 시 프로토콜 기본값을 사용합니다.",
+  hint: "Unset uses the protocol default.",
 };
 
 const streamOptions: OptionDefinition[] = [
   {
     key: "startBytes",
-    label: "시작 바이트",
+    label: "Start bytes",
     kind: "text",
     placeholder: "\\x02",
   },
   {
     key: "endBytes",
-    label: "종료 바이트",
+    label: "End bytes",
     kind: "text",
     placeholder: "\\x0D\\x0A",
   },
   {
     key: "retainStartEndBytes",
-    label: "시작/종료 바이트 유지",
+    label: "Retain start/end bytes",
     kind: "boolean",
   },
   {
     key: "combineBufferedData",
-    label: "버퍼 데이터 결합",
+    label: "Combine buffered data",
     kind: "boolean",
   },
   {
     key: "bufferTime",
-    label: "버퍼 시간 (ms)",
+    label: "Buffer time (ms)",
     kind: "number",
     placeholder: "100",
   },
 ];
 
 const httpOptions: OptionDefinition[] = [
-  { key: "cert", label: "인증서/키스토어 경로", kind: "text" },
-  { key: "format", label: "키스토어 형식", kind: "text", placeholder: "PKCS12" },
-  { key: "password", label: "키/키스토어 비밀번호", kind: "password" },
-  { key: "key", label: "PEM 개인키 경로", kind: "text" },
-  { key: "trustCert", label: "Trust 인증서/키스토어 경로", kind: "text" },
-  { key: "trustFormat", label: "Trust 키스토어 형식", kind: "text", placeholder: "PKCS12" },
-  { key: "trustPassword", label: "Trust 키스토어 비밀번호", kind: "password" },
-  { key: "useByteArrayBody", label: "Body를 byte[]로 처리", kind: "boolean" },
+  { key: "cert", label: "Certificate / keystore path", kind: "text" },
+  { key: "format", label: "Keystore format", kind: "text", placeholder: "PKCS12" },
+  { key: "password", label: "Key / keystore password", kind: "password" },
+  { key: "key", label: "PEM private key path", kind: "text" },
+  { key: "trustCert", label: "Trust certificate / keystore path", kind: "text" },
+  { key: "trustFormat", label: "Trust keystore format", kind: "text", placeholder: "PKCS12" },
+  { key: "trustPassword", label: "Trust keystore password", kind: "password" },
+  { key: "useByteArrayBody", label: "Handle body as byte[]", kind: "boolean" },
 ];
 
 const opcuaSecurityPolicies = [
@@ -109,15 +109,15 @@ const opcuaSecurityPolicies = [
 const opcuaPkiOptions: OptionDefinition[] = [
   {
     key: "pkiDir",
-    label: "PKI 디렉터리",
+    label: "PKI directory",
     kind: "text",
-    hint: "영구 identity.pfx, trust list, rejected 인증서를 저장합니다.",
+    hint: "Stores the persistent identity.pfx, the trust list, and rejected certificates.",
   },
   {
     key: "keyStorePassword",
-    label: "Identity 키스토어 비밀번호",
+    label: "Identity keystore password",
     kind: "password",
-    hint: "비워 두면 system property, 환경 변수 또는 PKI 디렉터리의 자동 생성 비밀번호를 사용합니다.",
+    hint: "Leave empty to use a system property, an environment variable, or the password generated in the PKI directory.",
   },
 ];
 
@@ -127,23 +127,23 @@ const opcuaClientOptions: OptionDefinition[] = [
     label: "Security policy",
     kind: "select",
     choices: opcuaSecurityPolicies,
-    placeholder: "None (기본값)",
+    placeholder: "None (default)",
   },
   {
     key: "securityMode",
     label: "Security mode",
     kind: "select",
     choices: ["Sign", "SignAndEncrypt"],
-    placeholder: "SignAndEncrypt (기본값)",
+    placeholder: "SignAndEncrypt (default)",
   },
-  { key: "username", label: "사용자 이름", kind: "text" },
-  { key: "password", label: "비밀번호", kind: "password" },
+  { key: "username", label: "Username", kind: "text" },
+  { key: "password", label: "Password", kind: "password" },
   {
     key: "subscriptionNodeIds",
-    label: "구독 NodeId",
+    label: "Subscription NodeIds",
     kind: "text",
     placeholder: "ns=2;s=PLC1/temp,ns=2;s=PLC1/alarm",
-    hint: "여러 NodeId는 쉼표로 구분합니다.",
+    hint: "Separate multiple NodeIds with commas.",
   },
   {
     key: "publishingInterval",
@@ -166,22 +166,22 @@ const opcuaServerOptions: OptionDefinition[] = [
     label: "Security policy",
     kind: "select",
     choices: opcuaSecurityPolicies,
-    placeholder: "username 사용 시 Basic256Sha256, 그 외 None",
+    placeholder: "Basic256Sha256 with username, otherwise None",
   },
   {
     key: "securityMode",
     label: "Security mode",
     kind: "select",
     choices: ["Sign", "SignAndEncrypt"],
-    placeholder: "SignAndEncrypt (기본값)",
+    placeholder: "SignAndEncrypt (default)",
   },
-  { key: "username", label: "사용자 이름", kind: "text" },
-  { key: "password", label: "비밀번호", kind: "password" },
+  { key: "username", label: "Username", kind: "text" },
+  { key: "password", label: "Password", kind: "password" },
   {
     key: "anonymous",
-    label: "익명 접속 병행 허용",
+    label: "Also allow anonymous access",
     kind: "boolean",
-    hint: "username을 지정한 경우에만 적용됩니다.",
+    hint: "Applies only when a username is set.",
   },
   ...opcuaPkiOptions,
 ];
@@ -198,7 +198,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "127.0.0.1",
     defaultPort: "5000",
-    hint: "TCP 서버에 연결해 byte/string 요청과 응답을 처리합니다.",
+    hint: "Connects to a TCP server and handles byte/string requests and responses.",
     options: withCommon(streamOptions),
   },
   {
@@ -207,7 +207,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "",
     defaultPort: "5000",
-    hint: "지정 포트에서 TCP client 연결을 수신합니다. host는 비워둘 수 있습니다.",
+    hint: "Accepts TCP client connections on the given port. Host may be left empty.",
     options: withCommon(streamOptions),
   },
   {
@@ -216,7 +216,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "127.0.0.1",
     defaultPort: "5000",
-    hint: "지정 host/port로 UDP datagram을 송수신합니다.",
+    hint: "Sends and receives UDP datagrams with the given host/port.",
     options: withCommon(streamOptions),
   },
   {
@@ -225,7 +225,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "",
     defaultPort: "5000",
-    hint: "UDP datagram을 수신하며 multicast group도 설정할 수 있습니다.",
+    hint: "Receives UDP datagrams and can join multicast groups.",
     options: withCommon([
       ...streamOptions,
       {
@@ -242,10 +242,10 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "127.0.0.1",
     defaultPort: "502",
-    hint: "Modbus TCP slave/server에 연결합니다.",
+    hint: "Connects to a Modbus TCP slave/server.",
     options: withCommon([
-      { key: "unitId", label: "기본 Unit ID", kind: "number", placeholder: "1" },
-      { key: "combineData", label: "여러 블록 데이터 결합", kind: "boolean" },
+      { key: "unitId", label: "Default unit ID", kind: "number", placeholder: "1" },
+      { key: "combineData", label: "Combine data of multiple blocks", kind: "boolean" },
     ]),
   },
   {
@@ -254,7 +254,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "",
     defaultPort: "502",
-    hint: "Device data를 Modbus address space로 제공하는 server입니다.",
+    hint: "Serves Device data as a Modbus address space.",
     options: withCommon(),
   },
   {
@@ -263,7 +263,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "base-url",
     defaultHost: "",
     defaultPort: "",
-    hint: "전체 base URL을 입력합니다. 예: https://api.example.com/v1",
+    hint: "Enter the full base URL, for example https://api.example.com/v1",
     options: withCommon(httpOptions),
   },
   {
@@ -272,7 +272,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "host-port",
     defaultHost: "",
     defaultPort: "8080",
-    hint: "지정 포트에서 HTTP 요청을 수신합니다.",
+    hint: "Accepts HTTP requests on the given port.",
     options: withCommon(httpOptions),
   },
   {
@@ -282,7 +282,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     defaultHost: "127.0.0.1",
     defaultPort: "4840",
     defaultPath: "",
-    hint: "OPC UA endpoint에 연결하고 read/write/subscription을 수행합니다.",
+    hint: "Connects to an OPC UA endpoint and performs read, write, and subscription.",
     options: withCommon(opcuaClientOptions),
   },
   {
@@ -292,7 +292,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     defaultHost: "",
     defaultPort: "4840",
     defaultPath: "",
-    hint: "Device data를 OPC UA variable node로 노출합니다.",
+    hint: "Exposes Device data as OPC UA variable nodes.",
     options: withCommon(opcuaServerOptions),
   },
   {
@@ -301,7 +301,7 @@ export const PROTOCOLS: ProtocolDefinition[] = [
     target: "none",
     defaultHost: "",
     defaultPort: "",
-    hint: "외부 연결 없이 script와 command 동작을 시험합니다.",
+    hint: "Tests script and command behavior without an external connection.",
     options: withCommon(),
   },
 ];
@@ -424,11 +424,11 @@ function parseHostPort(value: string, defaultHost: string, defaultPort: string) 
 export function parseConnectionUrl(connectionUrl = "tcp-client://127.0.0.1:5000") {
   const separator = connectionUrl.indexOf("://");
   if (separator < 0)
-    throw new Error("connectionUrl 형식이 올바르지 않습니다: " + connectionUrl);
+    throw new Error("invalid connectionUrl format: " + connectionUrl);
 
   const protocol = connectionUrl.slice(0, separator) as ProtocolId;
   if (!PROTOCOLS.some((definition) => definition.id === protocol)) {
-    throw new Error("지원하지 않는 protocol입니다: " + protocol);
+    throw new Error("unsupported protocol: " + protocol);
   }
 
   const definition = protocolDefinition(protocol);
@@ -497,7 +497,7 @@ export function buildConnectionUrl(connection: ConnectionDraft) {
 const numberOr = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-function commandToDraft(command: Command, index: number): CommandDraft {
+export function commandToDraft(command: Command, index: number): CommandDraft {
   const type = COMMAND_TYPES.includes(command.type as CommandType)
     ? (command.type as CommandType)
     : "READ_REQUEST";
@@ -554,25 +554,25 @@ export function deviceToDraft(device: Device, index: number): DeviceDraft {
 function parseData(draft: DeviceDraft) {
   const value = JSON.parse(draft.dataText || "{}") as unknown;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("[" + draft.id + "] data는 JSON object여야 합니다.");
+    throw new Error("[" + draft.id + "] data must be a JSON object.");
   }
   return value as Record<string, unknown>;
 }
 
 export function validateDrafts(drafts: DeviceDraft[]) {
   const errors: string[] = [];
-  if (drafts.length === 0) return ["연결할 Device를 하나 이상 추가하세요."];
+  if (drafts.length === 0) return ["Add at least one Device to connect."];
 
   const deviceIds = new Set<string>();
   for (let deviceIndex = 0; deviceIndex < drafts.length; deviceIndex++) {
     const draft = drafts[deviceIndex];
     const prefix = "Device " + (deviceIndex + 1);
     if (!draft.id.trim()) {
-      errors.push(prefix + ": deviceId를 입력하세요.");
+      errors.push(prefix + ": enter a deviceId.");
     } else if (!/^[a-zA-Z0-9_]+$/.test(draft.id)) {
-      errors.push(prefix + ": deviceId는 영문, 숫자, 밑줄만 사용할 수 있습니다.");
+      errors.push(prefix + ": deviceId may contain only letters, digits, and underscores.");
     } else if (deviceIds.has(draft.id)) {
-      errors.push(prefix + ": 중복 deviceId입니다 (" + draft.id + ").");
+      errors.push(prefix + ": duplicate deviceId (" + draft.id + ").");
     }
     deviceIds.add(draft.id);
 
@@ -587,31 +587,31 @@ export function validateDrafts(drafts: DeviceDraft[]) {
       clientProtocols.includes(draft.connection.protocol) &&
       !draft.connection.host.trim()
     ) {
-      errors.push(prefix + ": client host를 입력하세요.");
+      errors.push(prefix + ": enter the client host.");
     }
     if (definition.target === "host-port" || definition.target === "opc") {
       const port = Number(draft.connection.port);
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        errors.push(prefix + ": port는 1~65535 범위의 정수여야 합니다.");
+        errors.push(prefix + ": port must be an integer between 1 and 65535.");
       }
     }
     if (definition.target === "base-url" && !draft.connection.baseUrl.trim()) {
-      errors.push(prefix + ": HTTP base URL을 입력하세요.");
+      errors.push(prefix + ": enter the HTTP base URL.");
     }
     if (
       draft.connection.protocol === "opcua-server" &&
       draft.connection.options.username?.trim() &&
       draft.connection.options.securityPolicy === "None"
     ) {
-      errors.push(prefix + ": OPC UA username 인증에는 보안 Security policy가 필요합니다.");
+      errors.push(prefix + ": OPC UA username authentication requires a secure security policy.");
     }
 
     const optionNames = new Set(definition.options.map((option) => option.key));
     for (const option of draft.connection.customOptions) {
       if (!option.name.trim()) {
-        errors.push(prefix + ": 커스텀 옵션 이름을 입력하세요.");
+        errors.push(prefix + ": enter the custom option name.");
       } else if (optionNames.has(option.name.trim())) {
-        errors.push(prefix + ": 중복 connection 옵션입니다 (" + option.name + ").");
+        errors.push(prefix + ": duplicate connection option (" + option.name + ").");
       }
       optionNames.add(option.name.trim());
     }
@@ -627,14 +627,39 @@ export function validateDrafts(drafts: DeviceDraft[]) {
       const command = draft.commands[commandIndex];
       const commandPrefix = prefix + " / Command " + (commandIndex + 1);
       if (!command.id.trim()) {
-        errors.push(commandPrefix + ": command id를 입력하세요.");
+        errors.push(commandPrefix + ": enter the command id.");
       } else if (commandIds.has(command.id)) {
-        errors.push(commandPrefix + ": 중복 command id입니다 (" + command.id + ").");
+        errors.push(commandPrefix + ": duplicate command id (" + command.id + ").");
       }
       commandIds.add(command.id);
     }
   }
   return errors;
+}
+
+/** validate commands that are sent on their own, without an enclosing device */
+export function validateCommandDrafts(commands: CommandDraft[]) {
+  const errors: string[] = [];
+  if (commands.length === 0) return ["Add at least one Command to send."];
+
+  const commandIds = new Set<string>();
+  for (let commandIndex = 0; commandIndex < commands.length; commandIndex++) {
+    const command = commands[commandIndex];
+    const prefix = "Command " + (commandIndex + 1);
+    if (!command.id.trim()) {
+      errors.push(prefix + ": enter the command id.");
+    } else if (commandIds.has(command.id)) {
+      errors.push(prefix + ": duplicate command id (" + command.id + ").");
+    }
+    commandIds.add(command.id);
+  }
+  return errors;
+}
+
+export function draftsToCommands(drafts: CommandDraft[]): Command[] {
+  const errors = validateCommandDrafts(drafts);
+  if (errors.length > 0) throw new Error(errors.join("\n"));
+  return drafts.map(draftToCommand);
 }
 
 function draftToCommand(command: CommandDraft): Command {

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import DevicesTab from "./DevicesTab";
+import CommandsTab from "./CommandsTab";
 import NodesTab from "./NodesTab";
 import ResponsesTab from "./ResponsesTab";
 import "./App.css";
 
-const TABS = ["Devices", "Nodes", "Responses"] as const;
+const TABS = ["Devices", "Commands", "Nodes", "Responses"] as const;
 type Tab = (typeof TABS)[number];
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
       </header>
       <main>
         {tab === "Devices" && <DevicesTab />}
+        {tab === "Commands" && <CommandsTab />}
         {tab === "Nodes" && <NodesTab />}
         {tab === "Responses" && <ResponsesTab />}
       </main>

@@ -63,3 +63,10 @@ export interface ResponseEntry {
 
 /** GET /driver/response : deviceId -> tagId -> ResponseEntry */
 export type ResponseMap = Record<string, Record<string, ResponseEntry>>;
+
+/** the four POST /driver/{endpoint}/{deviceId} command endpoints */
+export type CommandEndpoint =
+  | "execute-commands"
+  | "request-commands"
+  | "execute-command-ids"
+  | "request-command-ids";

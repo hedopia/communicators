@@ -71,7 +71,7 @@ function CodeEditor({
         />
       </div>
       <div className="code-editor-status">
-        {lineCount} lines · Tab 키로 4칸 들여쓰기
+        {lineCount} lines · Tab inserts 4 spaces
       </div>
     </div>
   );

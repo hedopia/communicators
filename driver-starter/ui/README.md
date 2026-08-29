@@ -4,9 +4,10 @@ This directory contains the React and TypeScript management UI served by `driver
 
 ## Features
 
-The application has three tabs:
+The application has four tabs:
 
 - **Devices** shows cluster-wide device status and provides disconnect and reconnect actions.
+- **Commands** sends the four command endpoints to a connected device and shows the returned responses.
 - **Nodes** shows cluster membership, leader/follower position, activation state, and per-node device counts.
 - **Responses** shows collected values and supports device filtering and automatic refresh.
 
@@ -23,6 +24,15 @@ The Devices tab also contains a structured device configuration builder:
 - Save the current form as `devices.json`.
 - Load or export the configuration currently stored by the cluster.
 - Preserve imported Device extension fields and unrecognized URL query options. Unknown URL options appear under custom options. Changing the protocol intentionally resets options that belong to the previous protocol.
+
+The Commands tab drives the four command endpoints:
+
+- Choose `request-commands`, `request-command-ids`, `execute-commands`, or `execute-command-ids`.
+- Pick one of the devices currently connected in the cluster. The request is routed to the node holding the device with `/redirect-to-index/{nodeIndex}`.
+- Set the optional `initial-value` header. It is URL-encoded (UTF-8) before it is sent, so non-Latin-1 values are supported.
+- For the command-ID endpoints, list registered command IDs one per line. The IDs registered on the selected device are offered as shortcuts.
+- For the command endpoints, build the Command array with the same editor used by the Devices tab, optionally seeded from the device's registered commands.
+- Preview the request path and body before sending, and read the returned responses in a table.
 
 Supported protocols:
 
@@ -41,6 +51,7 @@ See the repository-level [driver guide](../../driver.md) for Device fields, Comm
 src/
   App.tsx                 Tab shell
   DevicesTab.tsx          Device status and structured configuration workflow
+  CommandsTab.tsx         Command endpoint request builder and result viewer
   DeviceEditor.tsx        Device field, script, and command sections
   ConnectionEditor.tsx    Protocol selector and URL option form
   CommandEditor.tsx       Command field and command-script editor
@@ -118,6 +129,10 @@ The UI uses the driver and cluster APIs documented in [driver.md](../../driver.m
 | Read a node's status map | `GET /redirect-to-index/{nodeIndex}/driver/device-status` |
 | Read collected values | `GET /driver/response` |
 | Read cluster membership | `GET /cluster/get-cluster-nodes` |
+| Run supplied commands | `POST /redirect-to-index/{nodeIndex}/driver/request-commands/{deviceId}` |
+| Run supplied commands with output | `POST /redirect-to-index/{nodeIndex}/driver/execute-commands/{deviceId}` |
+| Run registered command IDs | `POST /redirect-to-index/{nodeIndex}/driver/request-command-ids/{deviceId}` |
+| Run registered command IDs with output | `POST /redirect-to-index/{nodeIndex}/driver/execute-command-ids/{deviceId}` |
 
 ## Device file format
 

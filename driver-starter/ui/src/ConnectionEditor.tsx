@@ -83,7 +83,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
           value={value}
           onChange={(event) => setOption(option.key, event.target.value)}
         >
-          <option value="">미설정 (기본값)</option>
+          <option value="">unset (default)</option>
           <option value="true">true</option>
           <option value="false">false</option>
         </select>
@@ -94,7 +94,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
           value={value}
           onChange={(event) => setOption(option.key, event.target.value)}
         >
-          <option value="">{option.placeholder ?? "미설정 (기본값)"}</option>
+          <option value="">{option.placeholder ?? "unset (default)"}</option>
           {option.choices?.map((choice) => (
             <option key={choice} value={choice}>
               {choice}
@@ -126,8 +126,8 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
     <section className="editor-section connection-section">
       <div className="section-title-row">
         <div>
-          <h4>Protocol과 connectionUrl</h4>
-          <p>Protocol을 선택하면 주소와 지원 옵션이 자동으로 표시됩니다.</p>
+          <h4>Protocol and connectionUrl</h4>
+          <p>Selecting a protocol shows the matching address fields and supported options.</p>
         </div>
       </div>
 
@@ -166,7 +166,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
               <input
                 type="text"
                 value={connection.host}
-                placeholder={connection.protocol.endsWith("-server") ? "비우면 전체 interface" : "127.0.0.1"}
+                placeholder={connection.protocol.endsWith("-server") ? "empty binds every interface" : "127.0.0.1"}
                 onChange={(event) => patch({ host: event.target.value })}
               />
             </label>
@@ -197,14 +197,14 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
       </div>
 
       <div className="connection-url-preview">
-        <span>생성 connectionUrl</span>
+        <span>generated connectionUrl</span>
         <code>{buildConnectionUrl(connection)}</code>
       </div>
 
       <div className="subsection-title">
         <div>
-          <h5>Protocol 옵션</h5>
-          <p>값을 비우면 query parameter를 생성하지 않습니다.</p>
+          <h5>Protocol options</h5>
+          <p>An empty value produces no query parameter.</p>
         </div>
       </div>
       <div className="form-grid option-grid">
@@ -213,11 +213,11 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
 
       <div className="subsection-title custom-option-title">
         <div>
-          <h5>추가 옵션</h5>
-          <p>가져온 파일의 사용자 정의 query option도 그대로 보존됩니다.</p>
+          <h5>Custom options</h5>
+          <p>Custom query options of an imported file are preserved as they are.</p>
         </div>
         <button type="button" className="small" onClick={addCustomOption}>
-          + 옵션 추가
+          + Add option
         </button>
       </div>
       {connection.customOptions.length > 0 && (
@@ -226,7 +226,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
             <div className="custom-option-row" key={option.key}>
               <input
                 type="text"
-                aria-label={"추가 옵션 " + (index + 1) + " 이름"}
+                aria-label={"Custom option " + (index + 1) + " name"}
                 placeholder="option name"
                 value={option.name}
                 onChange={(event) =>
@@ -235,7 +235,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
               />
               <input
                 type="text"
-                aria-label={"추가 옵션 " + (index + 1) + " 값"}
+                aria-label={"Custom option " + (index + 1) + " value"}
                 placeholder="value"
                 value={option.value}
                 onChange={(event) =>
@@ -247,7 +247,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
                 className="danger small"
                 onClick={() => removeCustomOption(index)}
               >
-                삭제
+                remove
               </button>
             </div>
           ))}

@@ -1,10 +1,20 @@
-import { api, rootApi, nodePath, nodeDriverPath, clusterBasePath } from "./client";
+import {
+  api,
+  rootApi,
+  nodePath,
+  nodeDriverPath,
+  clusterBasePath,
+  driverBasePath,
+} from "./client";
 import type {
+  Command,
+  CommandEndpoint,
   ConnectResult,
   Device,
   DeviceIdMap,
   DeviceStatusMap,
   NodeStatus,
+  ResponseEntry,
   ResponseMap,
 } from "./types";
 
@@ -51,6 +61,33 @@ export async function fetchResponses(): Promise<ResponseMap> {
   return (await api.get<ResponseMap>("/response")).data;
 }
 
+/** path of a command endpoint, e.g. "/driver/execute-command-ids/device1" */
+export function commandEndpointPath(endpoint: CommandEndpoint, deviceId: string) {
+  return `${driverBasePath}/${endpoint}/${encodeURIComponent(deviceId)}`;
+}
+
+/**
+ * Run commands on the node holding the device. The endpoints only look at the
+ * protocols of the receiving node, so the request is routed to the owning node.
+ * {@code initial-value} must be URL-encoded (UTF-8): header values carry Latin-1 only.
+ */
+export async function postCommandEndpoint(
+  nodeIndex: number | string,
+  endpoint: CommandEndpoint,
+  deviceId: string,
+  body: Command[] | string[],
+  initialValue: string
+): Promise<ResponseEntry[]> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (initialValue !== "") headers["initial-value"] = encodeURIComponent(initialValue);
+  const res = await rootApi.post(
+    nodePath(nodeIndex, commandEndpointPath(endpoint, deviceId)),
+    JSON.stringify(body),
+    { headers }
+  );
+  return Array.isArray(res.data) ? (res.data as ResponseEntry[]) : [];
+}
+
 // ---- cluster ----
 
 export async function fetchClusterNodes(): Promise<number[]> {
@@ -84,8 +121,12 @@ export function errorMessage(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) {
     const withResponse = e as { response?: { data?: unknown }; message?: string };
     const data = withResponse.response?.data;
-    if (typeof data === "string" && data.length > 0) return data;
-    if (data !== undefined && data !== null) return JSON.stringify(data);
+    if (typeof data === "string") {
+      // an empty body carries nothing, so fall back to the axios message
+      if (data.length > 0) return data;
+    } else if (data !== undefined && data !== null) {
+      return JSON.stringify(data);
+    }
     return String(withResponse.message);
   }
   return String(e);

@@ -105,11 +105,11 @@ function DevicesTab() {
 
   const applyDevices = (devices: Device[]) => {
     if (devices.length === 0) {
-      throw new Error("파일에 Device가 없습니다.");
+      throw new Error("the file contains no Device.");
     }
     for (const device of devices) {
       if (!device || typeof device !== "object") {
-        throw new Error("Device 배열 형식이 올바르지 않습니다.");
+        throw new Error("invalid Device array format.");
       }
     }
     setDrafts(devices.map((device, index) => deviceToDraft(device, index)));
@@ -124,14 +124,14 @@ function DevicesTab() {
       try {
         const parsed = JSON.parse(String(reader.result ?? "")) as unknown;
         if (!Array.isArray(parsed)) {
-          throw new Error("Device JSON 파일은 배열이어야 합니다.");
+          throw new Error("the Device JSON file must be an array.");
         }
         applyDevices(parsed as Device[]);
       } catch (e) {
         setConnectError(errorMessage(e));
       }
     };
-    reader.onerror = () => setConnectError("파일을 읽지 못했습니다.");
+    reader.onerror = () => setConnectError("could not read the file.");
     reader.readAsText(file);
   };
 
@@ -214,7 +214,7 @@ function DevicesTab() {
     try {
       return JSON.stringify(draftsToDevices(drafts), null, 2);
     } catch (e) {
-      return "설정 오류: " + errorMessage(e);
+      return "configuration error: " + errorMessage(e);
     }
   }, [drafts]);
 
@@ -242,7 +242,7 @@ function DevicesTab() {
               disconnect-all
             </button>
             <button onClick={exportConnectedFile} disabled={busy}>
-              연결된 설정 저장
+              export connected
             </button>
           </div>
         </div>
@@ -293,17 +293,17 @@ function DevicesTab() {
       <section className="panel builder-panel">
         <div className="panel-header">
           <div>
-            <h2>Device 연결 구성</h2>
+            <h2>Device connection builder</h2>
             <p className="panel-description">
-              Protocol을 선택하고 Device와 Command 필드를 입력한 뒤 연결하세요.
+              Select a protocol, fill in the Device and Command fields, then connect.
             </p>
           </div>
           <div className="toolbar">
             <button type="button" onClick={addDraft} disabled={busy}>
-              + Device 추가
+              + Add device
             </button>
             <button onClick={() => fileInputRef.current?.click()} disabled={busy}>
-              파일 불러오기
+              import file
             </button>
             <input
               ref={fileInputRef}
@@ -316,20 +316,20 @@ function DevicesTab() {
               }}
             />
             <button type="button" onClick={loadConnectedDevices} disabled={busy}>
-              연결된 설정 불러오기
+              load connected
             </button>
             <button type="button" onClick={saveDraftFile} disabled={busy}>
-              작성 내용 저장
+              save draft
             </button>
             <button className="primary" onClick={connect} disabled={busy || drafts.length === 0}>
-              Device 연결
+              Connect devices
             </button>
           </div>
         </div>
         <div className="builder-summary">
-          <span>Device {drafts.length}개</span>
+          <span>{drafts.length} devices</span>
           <span>
-            Command {drafts.reduce((count, draft) => count + draft.commands.length, 0)}개
+            {drafts.reduce((count, draft) => count + draft.commands.length, 0)} commands
           </span>
         </div>
 
@@ -349,12 +349,12 @@ function DevicesTab() {
 
         <div className="add-device-row">
           <button type="button" onClick={addDraft} disabled={busy}>
-            + 새 Device 추가
+            + Add device
           </button>
         </div>
 
         <details className="json-preview">
-          <summary>생성 JSON 미리보기</summary>
+          <summary>generated JSON preview</summary>
           <pre>{generatedJson}</pre>
         </details>
 
