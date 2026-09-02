@@ -65,22 +65,22 @@ abstract class DriverProtocolOpcua extends DriverProtocol {
     protected Variant javaToVariant(Object value, String type) throws Exception {
         if (value == null) return Variant.NULL_VALUE;
         if (type != null) {
-            switch (type) {
-                case "Boolean": return new Variant(toBoolean(value));
-                case "SByte": return new Variant(((Number) value).byteValue());
-                case "Byte": return new Variant(UByte.valueOf(((Number) value).shortValue()));
-                case "Int16": return new Variant(((Number) value).shortValue());
-                case "UInt16": return new Variant(UShort.valueOf(((Number) value).intValue()));
-                case "Int32": return new Variant(((Number) value).intValue());
-                case "UInt32": return new Variant(UInteger.valueOf(((Number) value).longValue()));
-                case "Int64": return new Variant(((Number) value).longValue());
-                case "UInt64": return new Variant(ULong.valueOf(((Number) value).longValue()));
-                case "Float": return new Variant(((Number) value).floatValue());
-                case "Double": return new Variant(((Number) value).doubleValue());
-                case "String": return new Variant(value.toString());
-                case "DateTime": return new Variant(new DateTime(new java.util.Date(((Number) value).longValue())));
-                default: throw new Exception("unsupported opc-ua type: " + type);
-            }
+            return switch (type) {
+                case "Boolean" -> new Variant(toBoolean(value));
+                case "SByte" -> new Variant(((Number) value).byteValue());
+                case "Byte" -> new Variant(UByte.valueOf(((Number) value).shortValue()));
+                case "Int16" -> new Variant(((Number) value).shortValue());
+                case "UInt16" -> new Variant(UShort.valueOf(((Number) value).intValue()));
+                case "Int32" -> new Variant(((Number) value).intValue());
+                case "UInt32" -> new Variant(UInteger.valueOf(((Number) value).longValue()));
+                case "Int64" -> new Variant(((Number) value).longValue());
+                case "UInt64" -> new Variant(ULong.valueOf(((Number) value).longValue()));
+                case "Float" -> new Variant(((Number) value).floatValue());
+                case "Double" -> new Variant(((Number) value).doubleValue());
+                case "String" -> new Variant(value.toString());
+                case "DateTime" -> new Variant(new DateTime(new java.util.Date(((Number) value).longValue())));
+                default -> throw new Exception("unsupported opc-ua type: " + type);
+            };
         }
         if (value instanceof Boolean || value instanceof Integer || value instanceof Long ||
                 value instanceof Double || value instanceof Float || value instanceof String)

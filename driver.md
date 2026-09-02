@@ -312,45 +312,59 @@ Client options:
 Read request:
 
 ```json
-{"address":40001, "length":10, "unitId":1}
+{"address":"40001", "length":10, "unitId":1}
 ```
 
-An array of read objects may be supplied. Address conventions are:
+An array of read objects may be supplied. The address is a string whose leading digit selects the
+table and whose remaining digits are the one-based offset inside it:
 
+- `0xxxx`: coil
 - `1xxxx`: discrete input
 - `3xxxx`: input register
 - `4xxxx`: holding register
-- Coils: raw one-based address with `isCoil: true`
+
+So `"00001"`, `"10001"`, `"30001"`, and `"40001"` all address the first entry of their table. Four
+offset digits reach 9999 entries and five reach 65536, so `"40001"` and `"400001"` are equivalent.
 
 Write request:
 
 ```json
-{"address":1, "values":[1,2,3], "unitId":1}
+{"address":"40001", "values":[1,2,3], "unitId":1}
 ```
 
-Write addresses are raw one-based addresses rather than `4xxxx` addresses. Integer values write registers; Boolean values write coils.
+Write addresses use the same convention as read addresses. Only coils and holding registers are
+writable; a `1xxxx` or `3xxxx` address is rejected as read-only. Holding register values must be
+integers. Coil values may be `true`/`false`, or numbers where zero is false and anything else is
+true.
 
 Helpers:
 
 ```python
-protocol.requestInfo(address, length, unitId, isCoil)
+protocol.requestInfo(address, length, unitId)
 protocol.requestInfo(address, values, unitId)
 ```
 
 A client read passes `values[, receivedTime]` to `cmdFunc`. With `combineData=false`, multiple blocks are passed as a list of lists.
 
-A Modbus server stores register and coil state in Device data. Scripts can use:
+A Modbus server stores register and coil state in Device data, and uses the same address strings as
+the client. Scripts can use:
 
 ```python
-protocol.read(address, length, unitId, isCoil)
-protocol.write(address, values, unitId, isCoil)
+protocol.read(address, length, unitId)
+protocol.write(address, values, unitId)
 ```
+
+The server may write every table, including `1xxxx` and `3xxxx`, because it owns the data a client
+reads. Bit-table values follow the client rule: `true`/`false`, or numbers where zero is false.
 
 A client request triggers non-periodic commands with:
 
 ```text
 address, quantity-or-values, unitId, receivedTime
 ```
+
+`address` arrives as the canonical six-character string, so a request for the first holding register
+is reported as `"400001"` and the first coil as `"000001"`.
 
 ### HTTP
 

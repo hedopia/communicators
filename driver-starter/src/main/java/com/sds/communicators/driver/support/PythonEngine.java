@@ -27,8 +27,6 @@ public class PythonEngine {
         context = Context.newBuilder("python")
                 .engine(SHARED_ENGINE)
                 .allowAllAccess(true)
-                .allowExperimentalOptions(true)
-                .option("python.EmulateJython", "true")
                 .build();
         bindings = context.getBindings("python");
         listConstructor = context.eval("python", "list");
@@ -100,7 +98,7 @@ public class PythonEngine {
         return v == null || v.isNull();
     }
 
-    /** matches Jython PyInteger check (python bool is an int subclass) */
+    /** python bool is an int subclass */
     public static boolean isInteger(Value v) {
         return v != null && !v.isNull() && (v.isBoolean() || (v.isNumber() && v.fitsInInt()));
     }

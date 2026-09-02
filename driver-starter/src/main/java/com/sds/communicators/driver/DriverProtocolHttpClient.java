@@ -38,6 +38,8 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
         super.initialize(connectionInfo, option);
+        executeProtocolScript();
+
         basePath = connectionInfo;
         device.setConnectionCommand(true);
     }
@@ -102,7 +104,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         }
         var response = reference.get();
         var headers = getPyHeaders(response.getValue1());
-        var rcvBody = useByteArrayBody ? driverCommand.pythonEngine.toPyList(UtilFunc.arrayWrapper(response.getValue0())) :
+        var rcvBody = useByteArrayBody ? driverCommand.pythonEngine.toPyList(response.getValue0()) :
                 stringToPyObject(new String(response.getValue0(), StandardCharsets.UTF_8));
         log.trace("[{}] response received, httpStatusCode={}, body={}, headers={}", deviceId, response.getValue2(), toString(rcvBody), headers);
         Value[] received = new Value[] {driverCommand.pythonEngine.asValue(response.getValue2()), rcvBody, headers};

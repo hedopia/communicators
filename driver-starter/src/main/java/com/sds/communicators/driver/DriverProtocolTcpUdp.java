@@ -34,8 +34,8 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
     private final BlockingQueue<Triplet<String, Value[], Long>> requestedDataQueue = new ArrayBlockingQueue<>(10);
     private String host;
     private int port;
-    private Byte[] startBytes = null;
-    private Byte[] endBytes = null;
+    private byte[] startBytes = null;
+    private byte[] endBytes = null;
     private boolean retainStartEndBytes = false;
     private boolean combineBufferedData = true;
     private int bufferTime;
@@ -70,8 +70,8 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
         host = hostPort[0];
         port = Integer.parseInt(hostPort[1]);
 
-        startBytes = UtilFunc.arrayWrapper(UtilFunc.stringToByteArray(option.get("startBytes")));
-        endBytes = UtilFunc.arrayWrapper(UtilFunc.stringToByteArray(option.get("endBytes")));
+        startBytes = UtilFunc.stringToByteArray(option.get("startBytes"));
+        endBytes = UtilFunc.stringToByteArray(option.get("endBytes"));
         retainStartEndBytes = Boolean.parseBoolean(option.get("retainStartEndBytes"));
         if (option.get("combineBufferedData") != null)
             combineBufferedData = Boolean.parseBoolean(option.get("combineBufferedData"));
@@ -164,7 +164,7 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
         if (bufferTime == 0 && bufferingFunc == null && endBytes == null) {
             return flux
                     .doOnNext(pair -> buffering(
-                            new Packet(driverCommand.pythonEngine, pair.getValue1(), UtilFunc.arrayWrapper(pair.getValue0()), combineBufferedData), outbound)).then();
+                            new Packet(driverCommand.pythonEngine, pair.getValue1(), pair.getValue0(), combineBufferedData), outbound)).then();
         } else {
             return flux.doOnNext(pair -> buffering(pair, outbound, true)).then();
         }
@@ -179,7 +179,7 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
             }
             socket.lock.lockInterruptibly();
             try {
-                var data = UtilFunc.arrayWrapper(pair.getValue0());
+                var data = pair.getValue0();
                 var sender = pair.getValue1();
                 var packet = socket.senderDataMap.compute(sender, (k, v) -> v == null ? new Packet(driverCommand.pythonEngine, k) : v);
 
@@ -225,7 +225,7 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
         }
     }
 
-    private boolean bufferingFunction(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
+    private boolean bufferingFunction(Socket socket, Packet packet, byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
         try {
             Value funcResult = bufferingFunc.execute(packet.pyListBuffer);
             if (funcResult != null && funcResult.isBoolean()) {
@@ -258,18 +258,14 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
         return true;
     }
 
-    private boolean checkEndBytes(Socket socket, Packet packet, Byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
+    private boolean checkEndBytes(Socket socket, Packet packet, byte[] data, InetSocketAddress socketAddress, NettyOutbound outbound) {
         var combinedData = packet.getBuffer();
-        var endBytesIdx = UtilFunc.findFirst(combinedData, endBytes, true);
+        var endBytesIdx = findLastPattern(combinedData, endBytes);
         if (endBytesIdx == -1) {
             log.trace("[{}] buffering end-bytes continue, data: {}", deviceId, UtilFunc.printByteData(data));
             return false;
         } else {
-            int size = combinedData.length - endBytesIdx - endBytes.length;
-            var arr = new byte[size];
-            int start = endBytesIdx + endBytes.length;
-            for (int i = 0; i < size; i++)
-                arr[i] = combinedData[i + start];
+            var arr = Arrays.copyOfRange(combinedData, endBytesIdx + endBytes.length, combinedData.length);
             socket.senderDataMap.remove(packet.sender);
             if (arr.length == 0) {
                 buffering(packet, outbound);
@@ -346,10 +342,86 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
         }
     }
 
-    private static List<Byte[]> getSubArrays(Byte[] startBytes, Byte[] endBytes, Byte[] bytes, boolean retainStartEndBytes) {
-        List<Byte[]> ret = new ArrayList<>();
+    /**
+     * find all start indexes of pattern in bytes
+     * KMP algorithm used, a match consumes its bytes so matches never overlap
+     */
+    private static List<Integer> findPattern(byte[] bytes, byte[] pattern) {
+        List<Integer> ret = new ArrayList<>();
+        if (bytes == null || pattern == null || bytes.length == 0 || pattern.length == 0)
+            return ret;
+
+        int[] pi = new int[pattern.length];
+        for (int i = 1, j = 0; i < pattern.length; i++) {
+            while (j > 0 && pattern[i] != pattern[j]) j = pi[j - 1];
+            if (pattern[i] == pattern[j]) pi[i] = ++j;
+        }
+
+        for (int i = 0, j = 0; i < bytes.length; i++) {
+            while (j > 0 && bytes[i] != pattern[j]) j = pi[j - 1];
+            if (bytes[i] == pattern[j]) {
+                if (j == pattern.length - 1) {
+                    ret.add(i - pattern.length + 1);
+                    j = 0;
+                } else {
+                    j++;
+                }
+            }
+        }
+        return ret;
+    }
+
+    /**
+     * start index of the last occurrence of pattern in bytes, -1 if there is none
+     * KMP algorithm used on the reversed pattern, reading bytes from the end, so a pattern
+     * lying near the end of the buffer is found without reading the whole buffer.
+     * a pattern that can overlap itself is scanned from the start instead, because then the
+     * matches depend on where the scan began and they have to be the ones findPattern reports
+     */
+    private static int findLastPattern(byte[] bytes, byte[] pattern) {
+        if (bytes == null || pattern == null || pattern.length == 0 || pattern.length > bytes.length)
+            return -1;
+
+        if (hasBorder(pattern)) {
+            var indexes = findPattern(bytes, pattern);
+            return indexes.isEmpty() ? -1 : indexes.getLast();
+        }
+
+        int length = pattern.length;
+        var reversed = new byte[length];
+        for (int i = 0; i < length; i++) reversed[i] = pattern[length - 1 - i];
+
+        int[] pi = new int[length];
+        for (int i = 1, j = 0; i < length; i++) {
+            while (j > 0 && reversed[i] != reversed[j]) j = pi[j - 1];
+            if (reversed[i] == reversed[j]) pi[i] = ++j;
+        }
+
+        for (int i = 0, j = 0; i < bytes.length; i++) {
+            var b = bytes[bytes.length - 1 - i];
+            while (j > 0 && b != reversed[j]) j = pi[j - 1];
+            if (b == reversed[j]) {
+                if (j == length - 1) return bytes.length - 1 - i;
+                j++;
+            }
+        }
+        return -1;
+    }
+
+    /** true when pattern has a proper prefix that is also a suffix, so it can overlap itself */
+    private static boolean hasBorder(byte[] pattern) {
+        int[] pi = new int[pattern.length];
+        for (int i = 1, j = 0; i < pattern.length; i++) {
+            while (j > 0 && pattern[i] != pattern[j]) j = pi[j - 1];
+            if (pattern[i] == pattern[j]) pi[i] = ++j;
+        }
+        return pi[pattern.length - 1] != 0;
+    }
+
+    private static List<byte[]> getSubArrays(byte[] startBytes, byte[] endBytes, byte[] bytes, boolean retainStartEndBytes) {
+        List<byte[]> ret = new ArrayList<>();
         if (startBytes != null && endBytes == null) {
-            var startIdx = UtilFunc.findArrayPattern(bytes, startBytes);
+            var startIdx = findPattern(bytes, startBytes);
             if (!startIdx.isEmpty()) {
                 startIdx.add(bytes.length);
                 for (int i = 0; i < startIdx.size() - 1; i++) {
@@ -360,7 +432,7 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 }
             }
         } else if (startBytes == null && endBytes != null) {
-            var endIdx = UtilFunc.findArrayPattern(bytes, endBytes);
+            var endIdx = findPattern(bytes, endBytes);
             if (!endIdx.isEmpty()) {
                 if (retainStartEndBytes)
                     ret.add(Arrays.copyOfRange(bytes, 0, endIdx.get(0) + endBytes.length));
@@ -375,8 +447,8 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 }
             }
         } else if (startBytes != null) {
-            var startIdx = UtilFunc.findArrayPattern(bytes, startBytes);
-            var endIdx = UtilFunc.findArrayPattern(bytes, endBytes);
+            var startIdx = findPattern(bytes, startBytes);
+            var endIdx = findPattern(bytes, endBytes);
             for (int s = 0, e = 0; s < startIdx.size() && e < endIdx.size(); e++) {
                 if (startIdx.get(s) + startBytes.length <= endIdx.get(e)) {
                     if (retainStartEndBytes)
@@ -398,13 +470,13 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
     }
 
     private static class Packet {
-        final LinkedList<Byte[]> compositeData = new LinkedList<>();
+        final LinkedList<byte[]> compositeData = new LinkedList<>();
         boolean isFirstPacket = true;
         InetSocketAddress sender;
         private final PythonEngine pythonEngine;
         final Value pyListBuffer;
-        Byte[] combinedBuffer = new Byte[0];
-        private Byte[] buf = new Byte[32];
+        byte[] combinedBuffer = new byte[0];
+        private byte[] buf = new byte[32];
         private int count = 0;
         private int getCount = 0;
 
@@ -416,7 +488,7 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
             this.sender = sender;
         }
 
-        Packet(PythonEngine pythonEngine, InetSocketAddress sender, Byte[] data, boolean combineBufferedData) {
+        Packet(PythonEngine pythonEngine, InetSocketAddress sender, byte[] data, boolean combineBufferedData) {
             this(pythonEngine, sender);
             compositeData.add(data);
             if (combineBufferedData)
@@ -425,25 +497,17 @@ public abstract class DriverProtocolTcpUdp extends DriverProtocol {
                 addPyList(data);
         }
 
-        void addPyList(Byte[] data) {
+        void addPyList(byte[] data) {
             pyListBuffer.invokeMember("append", pythonEngine.toPyList(data));
         }
 
-        void writeBuffer(Byte[] b) {
-            writeBuffer(b, 0, b.length);
+        void writeBuffer(byte[] b) {
+            ensureCapacity(count + b.length);
+            System.arraycopy(b, 0, buf, count, b.length);
+            count += b.length;
         }
 
-        void writeBuffer(Byte[] b, int off, int len) {
-            if ((off < 0) || (off > b.length) || (len < 0) ||
-                    ((off + len) - b.length > 0)) {
-                throw new IndexOutOfBoundsException();
-            }
-            ensureCapacity(count + len);
-            System.arraycopy(b, off, buf, count, len);
-            count += len;
-        }
-
-        Byte[] getBuffer() {
+        byte[] getBuffer() {
             if (count != getCount) {
                 getCount = count;
                 return combinedBuffer = Arrays.copyOf(buf, count);

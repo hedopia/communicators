@@ -2,7 +2,6 @@ package com.sds.communicators.driver;
 
 import com.digitalpetri.modbus.client.ModbusTcpClient;
 import com.digitalpetri.modbus.pdu.*;
-import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import com.sds.communicators.driver.support.ModbusTcpSocketTransport;
 import lombok.ToString;
@@ -19,22 +18,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class DriverProtocolModbusClient extends DriverProtocol {
+public class DriverProtocolModbusClient extends DriverProtocolModbus {
     private ModbusTcpClient master;
     private final int BATCH_SIZE = 120;
 
-    private String host;
-    private int port;
     private int defaultUnitId = 1;
     private boolean combineData = true;
 
     @Override
     void initialize(String connectionInfo, Map<String, String> option) throws Exception {
-        executeProtocolScript();
+        super.initialize(connectionInfo, option);
 
-        var hostPort = UtilFunc.extractIpPort(connectionInfo);
-        host = hostPort[0];
-        port = Integer.parseInt(hostPort[1]);
         if (option.containsKey("unitId"))
             defaultUnitId = Integer.parseInt(option.get("unitId"));
         if (option.containsKey("combineData"))
@@ -66,11 +60,11 @@ public class DriverProtocolModbusClient extends DriverProtocol {
                 if (object instanceof List) {
                     for (var obj : (List<?>) object) {
                         var map = (Map<?, ?>) obj;
-                        readAddress.add(new ModbusRead(map.get("address"), map.get("length"), map.get("unitId"), defaultUnitId, map.get("isCoil")));
+                        readAddress.add(new ModbusRead(map.get("address"), map.get("length"), map.get("unitId"), defaultUnitId));
                     }
                 } else {
                     var map = (Map<?, ?>)object;
-                    readAddress.add(new ModbusRead(map.get("address"), map.get("length"), map.get("unitId"), defaultUnitId, map.get("isCoil")));
+                    readAddress.add(new ModbusRead(map.get("address"), map.get("length"), map.get("unitId"), defaultUnitId));
                 }
             } catch (Exception e) {
                 throw new DriverCommand.ScriptException(e);
@@ -123,21 +117,21 @@ public class DriverProtocolModbusClient extends DriverProtocol {
         int length = readAddress.length;
         var ret = new ArrayList<>();
         while(length > BATCH_SIZE) {
-            var result = read(address, BATCH_SIZE, readAddress.unitId, timeout, readAddress.type);
+            var result = read(address, BATCH_SIZE, readAddress.unitId, timeout, readAddress.table);
             log.trace("[{}] received raw data:{}", deviceId, result);
             ret.addAll(result);
             address += BATCH_SIZE;
             length -= BATCH_SIZE;
         }
-        var result = read(address, length, readAddress.unitId, timeout, readAddress.type);
+        var result = read(address, length, readAddress.unitId, timeout, readAddress.table);
         log.trace("[{}] received raw data:{}", deviceId, result);
         ret.addAll(result);
 
         return ret;
     }
 
-    private List<?> read(int address, int length, int unitId, int timeout, ModbusRead.Type type) throws Exception {
-        if (type == ModbusRead.Type.COIL) {
+    private List<?> read(int address, int length, int unitId, int timeout, ModbusTable table) throws Exception {
+        if (table == ModbusTable.COIL) {
             try {
                 var result = master.readCoilsAsync(unitId, new ReadCoilsRequest(address, length))
                         .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
@@ -145,7 +139,7 @@ public class DriverProtocolModbusClient extends DriverProtocol {
             } catch (Exception e) {
                 throw new Exception("ReadCoilsRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
-        } else if (type == ModbusRead.Type.DISCRETE_INPUT) {
+        } else if (table == ModbusTable.DISCRETE_INPUT) {
             try {
                 var result = master.readDiscreteInputsAsync(unitId, new ReadDiscreteInputsRequest(address, length))
                         .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
@@ -153,7 +147,7 @@ public class DriverProtocolModbusClient extends DriverProtocol {
             } catch (Exception e) {
                 throw new Exception("ReadDiscreteInputsRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
-        } else if (type == ModbusRead.Type.INPUT_REGISTER) {
+        } else if (table == ModbusTable.INPUT_REGISTER) {
             try {
                 var result = master.readInputRegistersAsync(unitId, new ReadInputRegistersRequest(address, length))
                         .toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
@@ -170,24 +164,6 @@ public class DriverProtocolModbusClient extends DriverProtocol {
                 throw new Exception("ReadHoldingRegistersRequest failed, address=" + address + ", length=" + length + ", unitId=" + unitId, e);
             }
         }
-    }
-
-    static List<Boolean> readBits(byte[] bits, int length) {
-        List<Boolean> ret = new ArrayList<>();
-        int bitIndex = 0;
-        for (int i = 0; i < bits.length && bitIndex < length; i++) {
-            var val = bits[i];
-            for (int b = 0; b < 8 && bitIndex++ < length; b++)
-                ret.add((val & (1 << b)) != 0);
-        }
-        return ret;
-    }
-
-    static List<Integer> readRegister(byte[] registers) {
-        var result = new ArrayList<Integer>();
-        for (int i = 0; i + 1 < registers.length; i += 2)
-            result.add(((registers[i] & 0xFF) << 8) | (registers[i + 1] & 0xFF));
-        return result;
     }
 
     void writeRequest(ModbusWrite writeData, int timeout) throws Exception {
@@ -263,30 +239,22 @@ public class DriverProtocolModbusClient extends DriverProtocol {
         }
     }
 
-    public String requestInfo(int address, int length) {
-        return "{\"address\":" + address + ", \"length\":" + length + "}";
+    public String requestInfo(String address, int length) {
+        return "{\"address\":\"" + address + "\", \"length\":" + length + "}";
     }
 
-    public String requestInfo(int address, int length, int unitId) {
-        return "{\"address\":" + address + ", \"length\":" + length + ", \"unitId\":" + unitId + "}";
+    public String requestInfo(String address, int length, int unitId) {
+        return "{\"address\":\"" + address + "\", \"length\":" + length + ", \"unitId\":" + unitId + "}";
     }
 
-    public String requestInfo(int address, int length, boolean isCoil) {
-        return "{\"address\":" + address + ", \"length\":" + length + ", \"isCoil\":" + isCoil + "}";
-    }
-
-    public String requestInfo(int address, int length, int unitId, boolean isCoil) {
-        return "{\"address\":" + address + ", \"length\":" + length + ", \"unitId\":" + unitId + ", \"isCoil\":" + isCoil + "}";
-    }
-
-    public String requestInfo(int address, List<?> values) {
+    public String requestInfo(String address, List<?> values) {
         var s = values.stream().map(Object::toString).collect(Collectors.joining(","));
-        return "{\"address\":" + address + ", \"values\":[" + s + "]}";
+        return "{\"address\":\"" + address + "\", \"values\":[" + s + "]}";
     }
 
-    public String requestInfo(int address, List<?> values, int unitId) {
+    public String requestInfo(String address, List<?> values, int unitId) {
         var s = values.stream().map(Object::toString).collect(Collectors.joining(","));
-        return "{\"address\":" + address + ", \"values\":[" + s + "], \"unitId\":" + unitId + "}";
+        return "{\"address\":\"" + address + "\", \"values\":[" + s + "], \"unitId\":" + unitId + "}";
     }
 
     @ToString
@@ -294,49 +262,20 @@ public class DriverProtocolModbusClient extends DriverProtocol {
         int address;
         int length;
         int unitId;
-        Type type;
+        ModbusTable table;
 
-        ModbusRead(Object address, Object length, Object unitId, int defaultUnitId, Object isCoil) throws Exception {
-            var ex = new Exception("creating ModbusRead failed, address=" + address + ", length=" + length + ", unitId=" + unitId + ", isCoil=" + isCoil);
-            if (!(address instanceof Integer) || !(length instanceof Integer) || ((Integer) length) < 0 || (unitId != null && !(unitId instanceof Integer)) || (isCoil != null && !(isCoil instanceof Boolean)))
+        ModbusRead(Object address, Object length, Object unitId, int defaultUnitId) throws Exception {
+            var ex = new Exception("creating ModbusRead failed, address=" + address + ", length=" + length
+                    + ", unitId=" + unitId + ", " + ADDRESS_FORMAT);
+            if (!(length instanceof Integer) || ((Integer) length) < 0 || (unitId != null && !(unitId instanceof Integer)))
                 throw ex;
-            this.address = (Integer) address;
             this.length = (Integer) length;
             this.unitId = unitId == null ? defaultUnitId : (Integer) unitId;
-            if (isCoil != null && (Boolean) isCoil) {
-                type = Type.COIL;
-                if (this.address > 0 && this.address + this.length <= 65537)
-                    this.address = this.address - 1;
-                else
-                    throw ex;
-            } else if (this.address > 10000 && this.address + this.length <= 20001) {
-                type = Type.DISCRETE_INPUT;
-                this.address = this.address - 10001;
-            } else if (this.address > 100000 && this.address + this.length <= 165537) {
-                type = Type.DISCRETE_INPUT;
-                this.address = this.address - 100001;
-            } else if (this.address > 30000 && this.address + this.length <= 40001) {
-                type = Type.INPUT_REGISTER;
-                this.address = this.address - 30001;
-            } else if (this.address > 300000 && this.address + this.length <= 365537) {
-                type = Type.INPUT_REGISTER;
-                this.address = this.address - 300001;
-            } else if (this.address > 40000 && this.address + this.length <= 50001) {
-                type = Type.HOLDING_REGISTER;
-                this.address = this.address - 40001;
-            } else if (this.address > 400000 && this.address + this.length <= 465537) {
-                type = Type.HOLDING_REGISTER;
-                this.address = this.address - 400001;
-            } else {
+            var resolved = resolveAddress(address, this.length);
+            if (resolved == null)
                 throw ex;
-            }
-        }
-
-        enum Type {
-            COIL,
-            DISCRETE_INPUT,
-            INPUT_REGISTER,
-            HOLDING_REGISTER
+            this.address = resolved.address();
+            this.table = resolved.table();
         }
     }
 
@@ -345,28 +284,48 @@ public class DriverProtocolModbusClient extends DriverProtocol {
         int address;
         List<?> values;
         int unitId;
-        boolean isCoil = false;
+        boolean isCoil;
 
         ModbusWrite(Object address, Object values, Object unitId, int defaultUnitId) throws Exception {
-            var ex = new Exception("creating ModbusWrite failed, address=" + address + ", values=" + values + ", unitId=" + unitId);
-            if (!(address instanceof Integer) || !(values instanceof List<?>) || (unitId != null && !(unitId instanceof Integer)))
+            var ex = new Exception("creating ModbusWrite failed, address=" + address + ", values=" + values
+                    + ", unitId=" + unitId + ", " + ADDRESS_FORMAT);
+            if (!(values instanceof List<?> valueList) || (unitId != null && !(unitId instanceof Integer)))
                 throw ex;
-            this.address = (Integer) address;
             this.unitId = unitId == null ? defaultUnitId : (Integer) unitId;
-            this.values = (List<?>) values;
-            if (this.address <= 0 || this.address + this.values.size() > 65537)
+            var resolved = resolveAddress(address, valueList.size());
+            if (resolved == null)
                 throw ex;
+            // a modbus client can only write coils and holding registers
+            if (resolved.table() != ModbusTable.COIL && resolved.table() != ModbusTable.HOLDING_REGISTER)
+                throw new Exception("creating ModbusWrite failed, " + resolved.table() + " is read-only, address=" + address);
+            this.address = resolved.address();
+            this.isCoil = resolved.table() == ModbusTable.COIL;
+            this.values = this.isCoil ? toBits(valueList, ex) : toRegisters(valueList, ex);
+        }
 
-            this.address = this.address - 1;
-
-            if (!this.values.isEmpty()) {
-                if (this.values.get(0) instanceof Integer)
-                    isCoil = false;
-                else if (this.values.get(0) instanceof Boolean)
-                    isCoil = true;
+        /** a bit table takes true/false, or a number where zero is false and anything else is true */
+        private static List<Boolean> toBits(List<?> values, Exception ex) throws Exception {
+            var ret = new ArrayList<Boolean>(values.size());
+            for (var value : values) {
+                if (value instanceof Boolean bool)
+                    ret.add(bool);
+                else if (value instanceof Number number)
+                    ret.add(number.doubleValue() != 0);
                 else
                     throw ex;
             }
+            return ret;
+        }
+
+        private static List<Integer> toRegisters(List<?> values, Exception ex) throws Exception {
+            var ret = new ArrayList<Integer>(values.size());
+            for (var value : values) {
+                if (value instanceof Integer integer)
+                    ret.add(integer);
+                else
+                    throw ex;
+            }
+            return ret;
         }
     }
 }

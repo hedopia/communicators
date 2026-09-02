@@ -104,7 +104,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         var path = decoder.path();
         var method = request.method().name();
         var headers = getPyHeaders(request.requestHeaders());
-        var rcvBody = useByteArrayBody ? driverCommand.pythonEngine.toPyList(UtilFunc.arrayWrapper(body)) :
+        var rcvBody = useByteArrayBody ? driverCommand.pythonEngine.toPyList(body) :
                 stringToPyObject(new String(body, StandardCharsets.UTF_8));
         log.trace("[{}] request received, method={}, path={}, body={}, params={}, headers={}", deviceId, method, path, toString(rcvBody), params, headers);
         Value[] received = new Value[]{driverCommand.pythonEngine.asValue(method), driverCommand.pythonEngine.asValue(path), rcvBody, params, headers};
@@ -118,7 +118,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                 log.trace("[{}] send OK response", deviceId);
                 return response.status(HttpResponseStatus.OK).then();
             } else {
-                var requestInfo = requestInfoList.get(requestInfoList.size() - 1);
+                var requestInfo = requestInfoList.getLast();
                 var responseInfo = objectMapper.readValue(requestInfo, ResponseInfo.class);
                 var statusCode = responseInfo.httpStatusCode == null ? 200 : responseInfo.httpStatusCode;
                 var responseBody = Strings.isNullOrEmpty(responseInfo.body) ? new byte[]{} : UtilFunc.stringToByteArray(responseInfo.body);
@@ -188,7 +188,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                     .append(makeBody(body))
                     .append(",");
         setHeaders(headers, sb);
-        if (sb.length() > 0) sb.setLength(sb.length() - 1);
+        if (!sb.isEmpty()) sb.setLength(sb.length() - 1);
         sb.insert(0, "{");
         sb.append("}");
         return sb.toString();
