@@ -13,8 +13,11 @@ import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
 import reactor.netty.http.server.HttpServerRoutes;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -23,7 +26,9 @@ public class ClusterStarter {
     int nodeIndex;
     @Getter
     int quorum;
+    @Getter
     int leaderLostTimeoutSeconds;
+    @Getter
     int heartbeatSendingIntervalMillis;
 
     private final ClusterRedirectFunction redirectFunction;
@@ -43,9 +48,9 @@ public class ClusterStarter {
     final String nodeUrl;
 
     @Getter
-    Position position = null;
+    volatile Position position = null;
     @Getter
-    boolean isActivated = false;
+    volatile boolean isActivated = false;
     boolean isPrepared = false;
 
     private boolean isStarted = false;
@@ -151,7 +156,9 @@ public class ClusterStarter {
                            int connectTimeoutMillis,
                            int readTimeoutMillis) throws Exception {
         nodeHttpClient = new NodeHttpClient(connectTimeoutMillis, readTimeoutMillis);
-        internalClient = new ClusterInternalClient(nodeHttpClient, clusterBasePath);
+        // two heartbeat intervals (at least 1 s), never longer than a regular call
+        long probeTimeoutMillis = Math.min(Math.max(2L * heartbeatSendingIntervalMillis, 1000L), readTimeoutMillis);
+        internalClient = new ClusterInternalClient(nodeHttpClient, clusterBasePath, Duration.ofMillis(probeTimeoutMillis));
         this.nodeIndex = nodeIndex;
         this.quorum = quorum;
         this.leaderLostTimeoutSeconds = leaderLostTimeoutSeconds;
@@ -254,15 +261,20 @@ public class ClusterStarter {
     }
 
     public void dispose() {
-        clusterService.dispose();
-        if (server != null) {
-            server.disposeNow();
-            for (Channel channel : serverChannels) {
-                try {
-                    channel.close().get();
-                } catch (Exception ignored) {}
+        // the server first: a heartbeat arriving while the service is disposed would add the node again, and its
+        // expiring timer would then remove (and fail over) a live peer
+        try {
+            if (server != null) {
+                server.disposeNow();
+                for (Channel channel : serverChannels) {
+                    try {
+                        channel.close().get();
+                    } catch (Exception ignored) {}
+                }
+                server = null;
             }
-            server = null;
+        } finally {
+            clusterService.dispose();
         }
         nodeHttpClient.dispose();
         isStarted = false;
@@ -281,14 +293,43 @@ public class ClusterStarter {
 
     public void deleteSharedObject(String... path) { clusterService.deleteSharedObject(path); }
 
-    public Object getItem(int nodeIndex, String[] path) { return clusterService.getItem(nodeIndex, path); }
-
-    public Map<Integer, Map<String, Object>> getSharedObjectMap() {
-        return clusterService.sharedObject;
+    /**
+     * Merges like {@link #mergeSharedObject(Object, String...)}, but only if ownObjectGuard accepts this node's own
+     * shared object; the guard is evaluated atomically with the change, so no other change of this node's object can
+     * come in between. The guard runs under the shared-object lock: it must be quick, must not block or call out, and
+     * must not keep or modify the map it is given.
+     * @return false, with nothing changed, when the guard rejects
+     */
+    public boolean mergeSharedObjectIf(Predicate<Map<String, Object>> ownObjectGuard, Object value, String... path) {
+        return clusterService.mergeSharedObjectIf(ownObjectGuard, value, path);
     }
 
+    /** Deletes like {@link #deleteSharedObject(List)}, but only if ownObjectGuard accepts, as for {@link #mergeSharedObjectIf}. */
+    public boolean deleteSharedObjectIf(Predicate<Map<String, Object>> ownObjectGuard, List<List<String>> paths) {
+        return clusterService.deleteSharedObjectIf(ownObjectGuard, paths);
+    }
+
+    /** a copy of the value at path in the shared object of nodeIndex, null when there is none */
+    public Object getItem(int nodeIndex, String[] path) { return clusterService.getItem(nodeIndex, path); }
+
+    /** a copy of every node's shared object held by this node */
+    public Map<Integer, Map<String, Object>> getSharedObjectMap() {
+        return clusterService.copySharedObjectMap();
+    }
+
+    /** a copy of this node's own shared object */
     public Map<String, Object> getSharedObject() {
-        return clusterService.sharedObject.get(nodeIndex);
+        var own = clusterService.copyReplica(nodeIndex, false);
+        return own == null ? null : own.obj;
+    }
+
+    /**
+     * Runs reader against the live shared objects of every node, under the lock that guards them, and returns its result.
+     * The reader must be quick, must not block or call out, and must neither modify the maps nor keep references into
+     * them (copy what it returns): use it to read a little without copying everything.
+     */
+    public <T> T readSharedObject(Function<Map<Integer, Map<String, Object>>, T> reader) {
+        return clusterService.readSharedObject(reader);
     }
 
     public void forceToLeader() {
@@ -299,6 +340,10 @@ public class ClusterStarter {
         clusterService.forceToFollower();
     }
 
+    /**
+     * Retries on the leader until the consumer succeeds, but throws instead of retrying a failure that
+     * cannot change (request not encodable, 4xx answer) and a {@link java.util.concurrent.CancellationException} when interrupted.
+     */
     public void toLeaderFuncConfirmed(Consumer<String> consumer, String name) {
         redirectFunction.toLeaderFuncConfirmed(consumer, name);
     }

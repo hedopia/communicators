@@ -9,13 +9,15 @@ import type {
   OptionDefinition,
   ProtocolId,
 } from "./deviceForm";
+import { optionPresentation } from "./protocolGuidance";
 
 interface ConnectionEditorProps {
   connection: ConnectionDraft;
+  protocolScript?: string;
   onChange: (connection: ConnectionDraft) => void;
 }
 
-function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
+function ConnectionEditor({ connection, protocolScript, onChange }: ConnectionEditorProps) {
   const definition = protocolDefinition(connection.protocol);
 
   const patch = (values: Partial<ConnectionDraft>) => {
@@ -76,14 +78,16 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
 
   const renderOption = (option: OptionDefinition) => {
     const value = connection.options[option.key] ?? "";
+    const presentation = optionPresentation(connection, option, protocolScript);
     let control;
     if (option.kind === "boolean") {
       control = (
         <select
           value={value}
+          disabled={presentation.disabled}
           onChange={(event) => setOption(option.key, event.target.value)}
         >
-          <option value="">unset (default)</option>
+          <option value="">{`unset (default: ${presentation.defaultValue ?? "protocol default"})`}</option>
           <option value="true">true</option>
           <option value="false">false</option>
         </select>
@@ -92,9 +96,10 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
       control = (
         <select
           value={value}
+          disabled={presentation.disabled}
           onChange={(event) => setOption(option.key, event.target.value)}
         >
-          <option value="">{option.placeholder ?? "unset (default)"}</option>
+          <option value="">{`unset (default: ${presentation.defaultValue ?? "protocol default"})`}</option>
           {option.choices?.map((choice) => (
             <option key={choice} value={choice}>
               {choice}
@@ -107,7 +112,10 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
         <input
           type={option.kind === "password" ? "password" : option.kind}
           value={value}
-          placeholder={option.placeholder}
+          placeholder={presentation.defaultValue}
+          min={option.key === "unitId" ? 0 : undefined}
+          max={option.key === "unitId" ? 255 : undefined}
+          step={option.key === "publishingInterval" ? "any" : option.kind === "number" ? 1 : undefined}
           onChange={(event) => setOption(option.key, event.target.value)}
         />
       );
@@ -117,7 +125,7 @@ function ConnectionEditor({ connection, onChange }: ConnectionEditorProps) {
       <label className="form-field" key={option.key}>
         <span>{option.label}</span>
         {control}
-        {option.hint && <small>{option.hint}</small>}
+        {presentation.hint && <small>{presentation.hint}</small>}
       </label>
     );
   };

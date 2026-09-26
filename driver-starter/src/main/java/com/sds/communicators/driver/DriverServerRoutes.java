@@ -132,32 +132,13 @@ class DriverServerRoutes {
             });
             routes.get(driverBasePath + "/devices", (request, response) -> {
                 log.trace(request.uri());
-                // shared-object: deviceId -> device setting map (addDevices),
-                // script data is merged under the device map's "data" key (DriverProtocol.setData),
-                // so filter map values having "id"/"connectionUrl" keys to pick device entries only.
-                // the maps are live HashMaps mutated concurrently by script setData / cluster merge,
-                // so deep-copy each entry (with retry on ConcurrentModificationException) before responding
-                Object result = null;
-                Exception failure = null;
-                for (int attempt = 0; attempt < 3 && result == null; attempt++) {
-                    try {
-                        var list = new ArrayList<>();
-                        for (var nodeObjects : driverStarter.getClusterStarter().getSharedObjectMap().values()) {
-                            for (var value : nodeObjects.values()) {
-                                if (value instanceof Map<?, ?> map && map.containsKey("id") && map.containsKey("connectionUrl"))
-                                    list.add(objectMapper.readValue(objectMapper.writeValueAsString(value), new TypeReference<Map<String, Object>>() {}));
-                            }
-                        }
-                        result = list;
-                    } catch (Exception e) {
-                        failure = e;
+                // the shared-object map is a detached copy, so it can be serialized while scripts keep writing
+                var result = new ArrayList<>();
+                for (var nodeObjects : driverStarter.getClusterStarter().getSharedObjectMap().values()) {
+                    for (var value : nodeObjects.values()) {
+                        if (DriverStarter.isDeviceEntry(value))
+                            result.add(value);
                     }
-                }
-                if (result == null) {
-                    log.error("get devices failed::{}", failure.getMessage());
-                    return response.status(500)
-                            .sendString(Mono.just("get devices failed::" + failure.getMessage()))
-                            .then();
                 }
                 return ok(response, result);
             });

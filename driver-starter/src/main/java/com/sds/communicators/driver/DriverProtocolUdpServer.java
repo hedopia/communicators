@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.Connection;
 import reactor.netty.DisposableChannel;
-import reactor.netty.NettyOutbound;
 import reactor.netty.udp.UdpServer;
 
 import java.net.*;
@@ -108,11 +107,16 @@ public class DriverProtocolUdpServer extends DriverProtocolTcpUdp {
     }
 
     @Override
-    protected void sendString(String msg, NettyOutbound outbound) throws Exception {
-        if (outbound == null)
-            throw new Exception("sendString with msg without outbound is not defined for udp-server");
-        log.debug("[{}] send response data: {}", deviceId, msg);
+    protected void sendString(String msg, ReplyTarget target) throws Exception {
+        if (target == null || target.sender() == null)
+            throw new Exception("sendString with msg without sender is not defined for udp-server");
+        log.debug("[{}] send response to {}, data: {}", deviceId, target.sender(), msg);
         var bytes = UtilFunc.stringToByteArray(msg);
-        syncExecute(() -> outbound.sendByteArray(Mono.just(bytes)).then().block());
+        // the server channel is not connected, so every datagram needs its destination
+        syncExecute(() -> ((Connection)channel).outbound()
+                .sendObject(
+                        Mono.just(new DatagramPacket(Unpooled.copiedBuffer(bytes),
+                                target.sender())))
+                .then().block());
     }
 }

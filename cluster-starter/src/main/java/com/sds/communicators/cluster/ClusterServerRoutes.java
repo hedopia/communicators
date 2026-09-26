@@ -9,6 +9,7 @@ import com.sds.communicators.common.type.NodeStatus;
 import com.sds.communicators.common.type.Position;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
@@ -70,7 +71,8 @@ class ClusterServerRoutes {
             return body(request, ClusterInternalClient.HeartbeatRequest.class, response, heartbeat -> {
                 if (clusterStarter.nodeIndex != heartbeat.nodeIndex)
                     clusterService.heartbeatReceived(heartbeat.nodeIndex, heartbeat.position, heartbeat.lastTransitionTime, heartbeat.sharedObjectSeq);
-                return ok(response);
+                // the sender learns which node answers at the url it used (a sender of an older version ignores it)
+                return ok(response, clusterStarter.nodeIndex);
             });
         });
         routes.get(base + "/node-status", (request, response) -> {
@@ -92,8 +94,14 @@ class ClusterServerRoutes {
         routes.delete(base + "/cluster-deleted/{nodeIndex}", (request, response) -> {
             log.trace(request.uri());
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            // data only: this node's membership view follows its own timers. A leader, which decides itself, remembers
+            // the sequence failed over (and keeps what it holds of that object when the sender no longer led, as does a
+            // follower for a copy that the sender did not list there)
+            var demoted = new QueryStringDecoder(request.uri()).parameters().get(ClusterInternalClient.DEMOTED_PARAMETER);
+            var sender = longParameter(request, ClusterInternalClient.SENDER_PARAMETER);
             if (clusterStarter.nodeIndex != nodeIndex)
-                clusterService.clusterDeleted(nodeIndex);
+                clusterService.replicaDeleted(nodeIndex, longParameter(request, ClusterInternalClient.SEQ_PARAMETER),
+                        demoted != null && demoted.contains("true"), sender == null ? 0 : sender.intValue());
             return ok(response);
         });
         routes.delete(base + "/remove-shared-object/{nodeIndex}", (request, response) -> {
@@ -112,7 +120,7 @@ class ClusterServerRoutes {
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
             return body(request, ClusterService.MergeSharedObjectInfo.class, response, info -> {
                 var ret = clusterService.setSharedObjectToLeader(nodeIndex, info);
-                return ret == null ? ok(response) : badRequest(response, ret);
+                return ret == null ? ok(response) : serviceUnavailable(response, ret);
             });
         });
         routes.post(base + "/delete-shared-object-to-leader/{nodeIndex}", (request, response) -> {
@@ -120,7 +128,7 @@ class ClusterServerRoutes {
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
             return body(request, ClusterService.DeleteSharedObjectInfo.class, response, info -> {
                 var ret = clusterService.setSharedObjectToLeader(nodeIndex, info);
-                return ret == null ? ok(response) : badRequest(response, ret);
+                return ret == null ? ok(response) : serviceUnavailable(response, ret);
             });
         });
         routes.post(base + "/check-merge-shared-object/{nodeIndex}", (request, response) -> {
@@ -135,6 +143,14 @@ class ClusterServerRoutes {
             return body(request, ClusterService.DeleteSharedObjectInfo.class, response, info ->
                     ok(response, clusterStarter.nodeIndex == nodeIndex || clusterService.checkSharedObject(nodeIndex, info)));
         });
+        routes.post(base + "/check-shared-object-changes/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, new TypeReference<List<ClusterService.SharedObjectChange>>() {}, response, changes ->
+                    ok(response, clusterStarter.nodeIndex == nodeIndex
+                            ? new ClusterService.SharedObjectChangesResult(true, clusterService.copySharedObjectSeq().get(nodeIndex))
+                            : clusterService.checkSharedObjectChanges(nodeIndex, changes)));
+        });
         routes.post(base + "/overwrite-shared-object/{nodeIndex}", (request, response) -> {
             log.trace(request.uri());
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
@@ -146,39 +162,80 @@ class ClusterServerRoutes {
         });
         routes.get(base + "/shared-object", (request, response) -> {
             log.trace(request.uri());
-            return ok(response, new ClusterService.MergeSharedObjectInfo(
-                    clusterService.sharedObjectSeq.get(clusterStarter.nodeIndex),
-                    clusterService.sharedObject.get(clusterStarter.nodeIndex)));
+            var info = clusterService.copyReplica(clusterStarter.nodeIndex, false);
+            return info == null ? notFound(response, ClusterService.ABSENT) : ok(response, info);
         });
         routes.get(base + "/shared-object/{nodeIndex}", (request, response) -> {
             log.trace(request.uri());
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
-            return ok(response, new ClusterService.MergeSharedObjectInfo(
-                    clusterService.sharedObjectSeq.get(nodeIndex),
-                    clusterService.sharedObject.get(nodeIndex)));
+            // a replica whose removal (failover) is still running is served too: followers keep it until then
+            var info = clusterService.copyReplica(nodeIndex, true);
+            return info == null ? notFound(response, ClusterService.ABSENT) : ok(response, info);
+        });
+        routes.get(base + "/shared-object-digest", (request, response) -> {
+            log.trace(request.uri());
+            // own=true: only this node's own object (the leader's anti-entropy), without copying every replica
+            var own = new QueryStringDecoder(request.uri()).parameters().get(ClusterInternalClient.OWN_DIGEST_PARAMETER);
+            return ok(response, own != null && own.contains("true") ? clusterService.ownDigest() : clusterService.digests());
         });
         routes.post(base + "/sync-shared-object/{nodeIndex}", (request, response) -> {
             log.trace(request.uri());
             int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            // other parameters are ignored (a node of the previous development version also marked the copies whose
+            // failover still ran on it, with ?removing=)
+            var parameters = new QueryStringDecoder(request.uri()).parameters();
+            var handover = parameters.get(ClusterInternalClient.HANDOVER_PARAMETER);
+            var removed = removedParameter(parameters.get(ClusterInternalClient.REMOVED_PARAMETER));
             return body(request, ClusterService.SharedObject.class, response, sharedObject -> {
                 if (clusterStarter.nodeIndex != nodeIndex)
-                    clusterService.syncSharedObject(sharedObject);
+                    clusterService.syncSharedObject(nodeIndex, sharedObject, handover == null || handover.isEmpty() ? null : handover.get(0), removed);
                 return ok(response);
+            });
+        });
+        routes.post(base + "/offer-shared-object/{nodeIndex}", (request, response) -> {
+            log.trace(request.uri());
+            int nodeIndex = Integer.parseInt(request.param("nodeIndex"));
+            return body(request, ClusterService.SharedObject.class, response, sharedObject -> {
+                var declined = clusterStarter.nodeIndex == nodeIndex ? Set.<Integer>of() : clusterService.adoptOffered(nodeIndex, sharedObject);
+                // not the leader (any more): the follower offers them again to the leader whose heartbeat it gets next.
+                // Otherwise the copies of members declined, which the follower offers again later
+                return declined != null ? ok(response, declined) : serviceUnavailable(response, "shared-object offer ignored, this node is not the leader");
             });
         });
         routes.post(base + "/check-shared-object-seq", (request, response) -> {
             log.trace(request.uri());
-            return body(request, new TypeReference<Map<Integer, Long>>() {}, response, sharedObjectSeq -> {
-                var result = new HashSet<Integer>();
-                for (var nodeIndex : sharedObjectSeq.keySet()) {
-                    if (clusterStarter.nodeIndex != nodeIndex &&
-                            (!clusterService.sharedObjectSeq.containsKey(nodeIndex) ||
-                                    !clusterService.sharedObjectSeq.get(nodeIndex).equals(sharedObjectSeq.get(nodeIndex))))
-                        result.add(nodeIndex);
-                }
-                return ok(response, result);
-            });
+            return body(request, new TypeReference<Map<Integer, Long>>() {}, response, sharedObjectSeq ->
+                    ok(response, clusterService.mismatchedSequences(sharedObjectSeq)));
         });
+    }
+
+    /** the query parameter's value, null when it is absent or not a number */
+    private static Long longParameter(HttpServerRequest request, String name) {
+        var values = new QueryStringDecoder(request.uri()).parameters().get(name);
+        if (values == null || values.isEmpty())
+            return null;
+        try {
+            return Long.parseLong(values.get(0));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** node-index -> sequence from nodeIndex:sequence values (a malformed one is left out) */
+    private static Map<Integer, Long> removedParameter(List<String> values) {
+        if (values == null)
+            return Map.of();
+        Map<Integer, Long> removed = new HashMap<>();
+        for (var value : values) {
+            int separator = value.indexOf(':');
+            if (separator < 0)
+                continue;
+            try {
+                removed.merge(Integer.parseInt(value.substring(0, separator)), Long.parseLong(value.substring(separator + 1)), Math::max);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return removed;
     }
 
     private <T> Mono<Void> body(HttpServerRequest request, Class<T> type, HttpServerResponse response, Function<T, Mono<Void>> handler) {
@@ -212,6 +269,15 @@ class ClusterServerRoutes {
 
     private Mono<Void> badRequest(HttpServerResponse response, Object body) {
         return send(response.status(400), body);
+    }
+
+    private Mono<Void> notFound(HttpServerResponse response, Object body) {
+        return send(response.status(404), body);
+    }
+
+    /** a transient failure: unlike 400 (deterministic, never retried), the caller keeps retrying it */
+    private Mono<Void> serviceUnavailable(HttpServerResponse response, Object body) {
+        return send(response.status(503), body);
     }
 
     private Mono<Void> send(HttpServerResponse response, Object body) {
@@ -339,11 +405,11 @@ class ClusterServerRoutes {
         });
         routes.get(clusterBasePath + "/shared-object-map", (request, response) -> {
             log.trace(request.uri());
-            return ok(response, clusterService.sharedObject);
+            return ok(response, clusterService.copySharedObjectMap());
         });
         routes.get(clusterBasePath + "/shared-object-seq", (request, response) -> {
             log.trace(request.uri());
-            return ok(response, clusterService.sharedObjectSeq);
+            return ok(response, clusterService.copySharedObjectSeq());
         });
         routes.post(clusterBasePath + "/add-cluster-node", (request, response) -> {
             log.trace(request.uri());

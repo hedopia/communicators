@@ -149,6 +149,14 @@ public abstract class DriverProtocol {
         }
     }
 
+    protected String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("cannot serialize request-info", e);
+        }
+    }
+
     private void statusChanged(StatusCode s, ZonedDateTime issuedTime) {
         log.info("[{}] status changed: {} -> {}", deviceId, status, s);
         status = s;
@@ -314,22 +322,66 @@ public abstract class DriverProtocol {
     }
 
     public void setData(Map<String, Object> data) {
-        driverService.clusterStarter.mergeSharedObject(data, deviceId, "data");
+        setData(data, List.of());
     }
 
     public void setData(Object value, List<String> path) {
-        driverService.clusterStarter.mergeSharedObject(value, getBasePath(path).toArray(new String[0]));
+        var jsonValue = toJsonData(value, "setData value");
+        var keys = toPathKeys(toJsonData(path, "setData path"));
+        // the device's data must stay an object: a failover rebuilds the Device from it
+        if (keys.isEmpty() && !(jsonValue instanceof Map))
+            throw new IllegalArgumentException("setData value must be a dict when the path is empty");
+        if (!driverService.clusterStarter.mergeSharedObjectIf(this::isRegistered, jsonValue, getBasePath(keys).toArray(new String[0])))
+            throw notRegistered();
     }
 
     public void deleteData(List<Object> path) {
-        if (path.stream().allMatch(p -> p instanceof List))
-            driverService.clusterStarter.deleteSharedObject(path.stream().map(p ->
-                            getBasePath(((List<?>)p).stream().map(Object::toString).collect(Collectors.toList())))
-                    .collect(Collectors.toList()));
-        else
-            driverService.clusterStarter.deleteSharedObject(getBasePath(path.stream().map(Object::toString).collect(Collectors.toList())).toArray(new String[0]));
+        if (!(toJsonData(path, "deleteData path") instanceof List<?> paths))
+            throw new IllegalArgumentException("deleteData path must be a list");
+        List<List<String>> basePaths = paths.stream().allMatch(p -> p instanceof List) ?
+                paths.stream().map(p -> getBasePath(toPathKeys(p))).collect(Collectors.toList()) :
+                List.of(getBasePath(toPathKeys(paths)));
+        if (!driverService.clusterStarter.deleteSharedObjectIf(this::isRegistered, basePaths))
+            throw notRegistered();
     }
 
+    /**
+     * a script can still run after its device was disconnected and deleted from the shared object: writing then would
+     * recreate the entry as script data without a registration, which nothing removes. Module-level protocolScript code
+     * runs while connectAll builds the protocol, before the device is registered; connectAll deletes what it wrote when
+     * the device does not get registered.
+     */
+    private boolean isRegistered(Map<String, Object> ownObject) {
+        return DriverStarter.isDeviceEntry(ownObject.get(deviceId)) || driverService.building.contains(deviceId);
+    }
+
+    private IllegalStateException notRegistered() {
+        return new IllegalStateException("device " + deviceId + " is not registered on this node");
+    }
+
+    /**
+     * Deep-copy a script-supplied value (GraalPy PolyglotMap/PolyglotList proxy, raw Value or host object)
+     * into plain JSON-compatible Java objects before it reaches the cluster shared object.
+     */
+    Object toJsonData(Object value, String name) {
+        try {
+            return PythonEngine.toJavaObject(driverCommand.pythonEngine.asValue(value));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(name + " must be JSON-compatible: " + e.getMessage(), e);
+        }
+    }
+
+    private static List<String> toPathKeys(Object path) {
+        if (!(path instanceof List<?> keys))
+            throw new IllegalArgumentException("data path must be a list of keys: " + path);
+        return keys.stream().map(key -> {
+            if (key == null || key instanceof Map || key instanceof List)
+                throw new IllegalArgumentException("data path key must be a string or number: " + key);
+            return key.toString();
+        }).collect(Collectors.toList());
+    }
+
+    /** a detached copy: changing it does not change the device's data, use setData/deleteData for that */
     public Object getData(List<String> path) {
         return driverService.clusterStarter.getItem(driverService.clusterStarter.getNodeIndex(), getBasePath(path).toArray(new String[0]));
     }

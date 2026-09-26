@@ -1,6 +1,5 @@
 package com.sds.communicators.driver;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.sds.communicators.driver.support.PythonEngine;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.ssl.SslContext;
@@ -81,38 +80,30 @@ abstract class DriverProtocolHttp extends DriverProtocol {
         return pyHeaders;
     }
 
-    protected void setHeaders(Value[] headers, StringBuilder sb) {
-        var headerMap = new HashMap<String, List<String>>();
-        for (int i = 0; i < headers.length - 1; i += 2) {
-            var key = PythonEngine.asString(headers[i]);
+    protected Map<String, List<String>> headerMap(Value[] headers) {
+        if (headers.length % 2 != 0)
+            throw new IllegalArgumentException("headers must be name/value pairs");
+        var result = new HashMap<String, List<String>>();
+        for (int i = 0; i < headers.length; i += 2) {
+            var name = PythonEngine.asString(headers[i]);
             var value = PythonEngine.asString(headers[i + 1]);
-            headerMap.compute(key, (k, v) -> v == null ? new ArrayList<>() : v).add(value);
+            result.computeIfAbsent(name, ignored -> new ArrayList<>()).add(value);
         }
-        if (!headerMap.isEmpty()) {
-            sb.append("\"headers\":");
-            try {
-                sb.append(objectMapper.writeValueAsString(headerMap));
-            } catch (JsonProcessingException ignored) {}
-            sb.append(",");
-        }
+        return result;
     }
 
-    protected String makeBody(Value body) {
-        String ret = "\"\"";
-        if (PythonEngine.isString(body)) {
-            try {
-                ret = objectMapper.writeValueAsString(body.asString());
-            } catch (JsonProcessingException ignored) {
-            }
-        } else {
-            try {
-                Object javaBody = body.hasArrayElements() ? body.as(List.class) : body.toString();
-                ret = "\"" + objectMapper.writeValueAsString(javaBody) + "\"";
-            } catch (JsonProcessingException e) {
-                ret = "\"" + body + "\"";
-            }
+    /** String bodies keep the existing byte-escape syntax; structured bodies use literal JSON bytes. */
+    protected byte[] bodyBytes(Object body) {
+        if (body == null) return new byte[0];
+        if (body instanceof String text) {
+            var bytes = com.sds.communicators.common.UtilFunc.stringToByteArray(text);
+            return bytes == null ? new byte[0] : bytes;
         }
-        return ret;
+        try {
+            return objectMapper.writeValueAsBytes(body);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("cannot serialize HTTP body", e);
+        }
     }
 
     protected abstract SslContextBuilder getSslContextBuilder(InputStream keyCertChainInputStream, InputStream keyInputStream, String keyPassword);

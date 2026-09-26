@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.netty.Connection;
 import reactor.netty.DisposableChannel;
-import reactor.netty.NettyOutbound;
 import reactor.netty.udp.UdpClient;
 
 import java.time.Duration;
@@ -46,7 +45,7 @@ public class DriverProtocolUdpClient extends DriverProtocolTcpUdp {
     }
 
     @Override
-    protected void sendString(String msg, NettyOutbound outbound) {
+    protected void sendString(String msg, ReplyTarget target) {
         log.debug("[{}] send data: {}", deviceId, msg);
         var bytes = UtilFunc.stringToByteArray(msg);
         syncExecute(() -> ((Connection)channel).outbound().sendByteArray(Mono.just(bytes)).then().block());

@@ -16,9 +16,11 @@ The Devices tab also contains a structured device configuration builder:
 - Select one of the supported protocols before entering connection details.
 - Edit all `Device` fields individually.
 - Configure protocol-specific `connectionUrl` options.
+- See actual boolean defaults and conditional TCP buffering, HTTP trust-store, and OPC UA security defaults. Inactive OPC UA controls retain their values; `connectionCommand` reflects the forced server/HTTP-client setting in both the form and exported JSON.
 - Add, edit, duplicate, and remove commands.
 - Edit all `Command` fields individually.
 - Write `protocolScript` and `cmdScript` Python code in editors with line numbers and Tab indentation.
+- Preview `cmdFunc` and `requestInfo` signatures for incoming events, periodic/lifecycle execution, or REST (with optional `initialValue`). Protocol-specific static request and helper examples distinguish the three requestInfo interfaces. A skeleton can be inserted into an empty script; existing code is never rewritten by guidance changes.
 - Preview the generated Device JSON.
 - Import a Device JSON array from a file.
 - Save the current form as `devices.json`.
@@ -32,6 +34,7 @@ The Commands tab drives the four command endpoints:
 - Set the optional `initial-value` header. It is URL-encoded (UTF-8) before it is sent, so non-Latin-1 values are supported.
 - For the command-ID endpoints, list registered command IDs one per line. The IDs registered on the selected device are offered as shortcuts.
 - For the command endpoints, build the Command array with the same editor used by the Devices tab, optionally seeded from the device's registered commands.
+- Script guidance follows the selected device's protocol and the actual `initial-value` field. Unknown protocol details are reported explicitly. Command edits apply to this one invocation even when the ID matches a registered command; they do not replace the registered definition.
 - Preview the request path and body before sending, and read the returned responses in a table.
 
 Supported protocols:
@@ -57,6 +60,7 @@ src/
   CommandEditor.tsx       Command field and command-script editor
   CodeEditor.tsx          Lightweight Python code editor
   deviceForm.ts           Protocol schemas, drafts, validation, and URL conversion
+  protocolGuidance.ts     Conditional defaults, execution-specific signatures, and examples
   NodesTab.tsx            Cluster node management
   ResponsesTab.tsx        Collected response viewer
   api.ts                  REST API calls
@@ -97,6 +101,7 @@ The development build replaces `__APP_BASE_PATH__` with `/driver`.
 
 ```bash
 npm run lint
+npm test
 npm run build
 ```
 
@@ -167,4 +172,4 @@ Import and export use the same Device JSON array accepted by `POST /driver/balan
 ]
 ```
 
-Validation is performed before connecting or saving. Device and command IDs must contain only letters, numbers, and underscores; ports and numeric settings must be valid numbers; and `data` must contain a JSON object.
+Validation is performed before connecting or saving. Device and command IDs must contain only letters, numbers, and underscores; ports must be integers in 1–65535; Modbus client unitId must be a decimal integer in 0–255; and `data` must contain a JSON object. OPC UA server username authentication rejects an explicit None security policy. Python code and protocol request payloads are checked by the runtime; UI guidance is not a Python validator.

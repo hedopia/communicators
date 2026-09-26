@@ -1,4 +1,5 @@
 import type { Command, CommandType, Device } from "./types";
+import { connectionCommandSetting } from "./protocolGuidance";
 
 export const COMMAND_TYPES: CommandType[] = [
   "READ_REQUEST",
@@ -598,9 +599,14 @@ export function validateDrafts(drafts: DeviceDraft[]) {
     if (definition.target === "base-url" && !draft.connection.baseUrl.trim()) {
       errors.push(prefix + ": enter the HTTP base URL.");
     }
+    const unitId = draft.connection.options.unitId;
+    if (draft.connection.protocol === "modbus-client" && unitId &&
+        (!/^\d+$/.test(unitId) || Number(unitId) > 255)) {
+      errors.push(prefix + ": unitId must be a decimal integer between 0 and 255.");
+    }
     if (
       draft.connection.protocol === "opcua-server" &&
-      draft.connection.options.username?.trim() &&
+      draft.connection.options.username &&
       draft.connection.options.securityPolicy === "None"
     ) {
       errors.push(prefix + ": OPC UA username authentication requires a secure security policy.");
@@ -628,6 +634,8 @@ export function validateDrafts(drafts: DeviceDraft[]) {
       const commandPrefix = prefix + " / Command " + (commandIndex + 1);
       if (!command.id.trim()) {
         errors.push(commandPrefix + ": enter the command id.");
+      } else if (!/^[a-zA-Z0-9_]+$/.test(command.id)) {
+        errors.push(commandPrefix + ": command id may contain only letters, digits, and underscores.");
       } else if (commandIds.has(command.id)) {
         errors.push(commandPrefix + ": duplicate command id (" + command.id + ").");
       }
@@ -648,6 +656,8 @@ export function validateCommandDrafts(commands: CommandDraft[]) {
     const prefix = "Command " + (commandIndex + 1);
     if (!command.id.trim()) {
       errors.push(prefix + ": enter the command id.");
+    } else if (!/^[a-zA-Z0-9_]+$/.test(command.id)) {
+      errors.push(prefix + ": command id may contain only letters, digits, and underscores.");
     } else if (commandIds.has(command.id)) {
       errors.push(prefix + ": duplicate command id (" + command.id + ").");
     }
@@ -701,7 +711,7 @@ export function draftsToDevices(drafts: DeviceDraft[]): Device[] {
       connectionUrl: buildConnectionUrl(draft.connection),
       protocolScript: draft.protocolScript,
       commands,
-      connectionCommand: draft.connectionCommand,
+      connectionCommand: connectionCommandSetting(draft.connection.protocol, draft.connectionCommand).value,
       data: parseData(draft),
     };
     devices.push(device);

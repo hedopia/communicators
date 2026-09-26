@@ -13,8 +13,9 @@ import {
   commandToDraft,
   createCommandDraft,
   draftsToCommands,
+  parseConnectionUrl,
 } from "./deviceForm";
-import type { CommandDraft } from "./deviceForm";
+import type { CommandDraft, ConnectionDraft } from "./deviceForm";
 import { driverBasePath } from "./client";
 import type { CommandEndpoint, ResponseEntry } from "./types";
 
@@ -22,6 +23,7 @@ interface DeviceOption {
   deviceId: string;
   nodeIndex: string;
   commandIds: string[];
+  connection?: ConnectionDraft;
 }
 
 interface EndpointDefinition {
@@ -83,7 +85,15 @@ function CommandsTab() {
     try {
       const [idMap, devices] = await Promise.all([fetchDeviceIdMap(), fetchDevices()]);
       const commandIdsByDevice = new Map<string, string[]>();
+      const connectionsByDevice = new Map<string, ConnectionDraft>();
       for (const device of devices) {
+        if (device.connectionUrl) {
+          try {
+            connectionsByDevice.set(device.id, parseConnectionUrl(device.connectionUrl));
+          } catch {
+            // Keep the device selectable, but do not invent protocol guidance.
+          }
+        }
         commandIdsByDevice.set(
           device.id,
           (device.commands ?? []).map((command) => command.id).filter(Boolean)
@@ -96,6 +106,7 @@ function CommandsTab() {
             deviceId: id,
             nodeIndex,
             commandIds: commandIdsByDevice.get(id) ?? [],
+            connection: connectionsByDevice.get(id),
           });
         }
       }
@@ -296,7 +307,7 @@ function CommandsTab() {
               placeholder='optional, e.g. {"speed":1500}'
               onChange={(event) => setInitialValue(event.target.value)}
             />
-            <small>Sent URL-encoded, and passed to the scripts as the first argument.</small>
+            <small>When nonempty, sent URL-encoded and prepended to both requestInfo and cmdFunc arguments. JSON is parsed; other text remains a string. Empty means no initial argument.</small>
           </label>
         </div>
 
@@ -366,7 +377,7 @@ function CommandsTab() {
                 <h2>Commands</h2>
                 <p className="panel-description">
                   The commands are sent in the request body and do not have to be registered
-                  on the device.
+                  on the device. Edits, even with a registered ID, apply to this request without replacing the registered command. Command objects run by ascending order.
                 </p>
               </div>
               <div className="toolbar">
@@ -392,6 +403,9 @@ function CommandsTab() {
                   <CommandEditor
                     key={draft.key}
                     command={draft}
+                    connection={selected?.connection}
+                    executionContext="rest"
+                    initialValue={initialValue !== ""}
                     index={index}
                     onChange={(next) => updateDraft(index, next)}
                     onDuplicate={() => duplicateDraft(index)}

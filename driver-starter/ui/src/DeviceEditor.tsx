@@ -7,6 +7,7 @@ import {
   protocolDefinition,
 } from "./deviceForm";
 import type { CommandDraft, DeviceDraft } from "./deviceForm";
+import { connectionCommandSetting, protocolScriptGuidance } from "./protocolGuidance";
 
 interface DeviceEditorProps {
   draft: DeviceDraft;
@@ -33,6 +34,8 @@ function DeviceEditor({
   onRemove,
 }: DeviceEditorProps) {
   const definition = protocolDefinition(draft.connection.protocol);
+  const connectionCommand = connectionCommandSetting(draft.connection.protocol, draft.connectionCommand);
+  const protocolGuide = protocolScriptGuidance(draft.connection.protocol);
 
   const patch = (values: Partial<DeviceDraft>) => {
     onChange({ ...draft, ...values });
@@ -179,11 +182,13 @@ function DeviceEditor({
             <span className="checkbox-control">
               <input
                 type="checkbox"
-                checked={draft.connectionCommand}
+                checked={connectionCommand.value}
+                disabled={connectionCommand.locked}
                 onChange={(event) => patch({ connectionCommand: event.target.checked })}
               />
               Connect only while a request runs
             </span>
+            <small>{connectionCommand.hint}</small>
           </label>
           <label className="form-field span-2">
             <span>Device data (JSON object)</span>
@@ -204,6 +209,7 @@ function DeviceEditor({
 
       <ConnectionEditor
         connection={draft.connection}
+        protocolScript={draft.protocolScript}
         onChange={(connection) => patch({ connection })}
       />
 
@@ -211,14 +217,14 @@ function DeviceEditor({
         <div className="section-title-row">
           <div>
             <h4>Protocol script</h4>
-            <p>Protocol-level packet handling functions are written in Python.</p>
+            <p>{protocolGuide.hint}</p>
           </div>
         </div>
         <CodeEditor
           label="Protocol script"
           value={draft.protocolScript}
           onChange={(protocolScript) => patch({ protocolScript })}
-          placeholder="def protocolFunc(received, sender, receivedTime):"
+          placeholder={protocolGuide.signature}
           minHeight={220}
         />
       </section>
@@ -243,6 +249,7 @@ function DeviceEditor({
               <CommandEditor
                 key={command.key}
                 command={command}
+                connection={draft.connection}
                 index={commandIndex}
                 onChange={(next) => updateCommand(commandIndex, next)}
                 onDuplicate={() => duplicateCommand(commandIndex)}

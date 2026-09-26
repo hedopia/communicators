@@ -1,10 +1,14 @@
 package com.sds.communicators.driver.support;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Value;
 
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.function.BiConsumer;
 
 /**
@@ -16,6 +20,8 @@ public class PythonEngine {
     private static final Engine SHARED_ENGINE = Engine.newBuilder()
             .option("engine.WarnInterpreterOnly", "false")
             .build();
+    private static final int MAX_JSON_DEPTH = 256;
+    private static final ObjectMapper HOST_MAPPER = new ObjectMapper();
 
     private final Context context;
     private final Value bindings;
@@ -45,6 +51,96 @@ public class PythonEngine {
 
     public void set(String name, Object value) {
         bindings.putMember(name, value);
+    }
+
+    public void remove(String name) {
+        bindings.removeMember(name);
+    }
+
+    /**
+     * Convert a JSON-compatible Python (or host) value to plain Java objects:
+     * <ul>
+     *   <li>None -> null, str -> String, bool -> Boolean</li>
+     *   <li>float (and host Double/Float) -> Double, even without a fractional part (25.0 stays 25.0);
+     *       NaN and +/-Infinity are rejected</li>
+     *   <li>int -> Integer if it fits in 32 bits, else Long if it fits in 64 bits, else BigInteger
+     *       (the types Jackson produces when the JSON is parsed back)</li>
+     *   <li>dict/mapping -> LinkedHashMap&lt;String, Object&gt; (str/int/float/bool keys, as their string form)</li>
+     *   <li>list/tuple/array -> ArrayList</li>
+     * </ul>
+     * Host beans and enums returned by the protocol API are mapped by Jackson (enum -> name).
+     * Anything else (datetime, Decimal, set, objects, ...) or nesting deeper than {@value #MAX_JSON_DEPTH}
+     * levels (e.g. a cyclic reference) throws IllegalArgumentException.
+     */
+    public static Object toJavaObject(Value value) {
+        return toJavaObject(value, 0);
+    }
+
+    private static Object toJavaObject(Value value, int depth) {
+        if (depth > MAX_JSON_DEPTH)
+            throw new IllegalArgumentException("unsupported JSON value: nested deeper than " + MAX_JSON_DEPTH + " levels (cyclic reference?)");
+        if (isNone(value)) return null;
+        if (value.isString()) return value.asString();
+        if (value.isBoolean()) return value.asBoolean();
+        if (value.isNumber()) return toJavaNumber(value);
+        if (value.hasHashEntries()) {
+            var result = new LinkedHashMap<String, Object>();
+            forEachHashEntry(value, (key, item) -> result.put(toJsonKey(key), toJavaObject(item, depth + 1)));
+            return result;
+        }
+        if (value.hasArrayElements()) {
+            var result = new ArrayList<Object>();
+            for (long i = 0; i < value.getArraySize(); i++)
+                result.add(toJavaObject(value.getArrayElement(i), depth + 1));
+            return result;
+        }
+        if (value.isHostObject())
+            return hostToJavaObject(value);
+        throw new IllegalArgumentException("unsupported JSON value: " + typeName(value));
+    }
+
+    /** host beans and enums returned by the protocol API (e.g. Response, StatusCode) map to their JSON form */
+    private static Object hostToJavaObject(Value value) {
+        var host = value.asHostObject();
+        if (host instanceof Enum<?> e) return e.name();
+        try {
+            return HOST_MAPPER.convertValue(host, Object.class);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("unsupported JSON value: " + typeName(value), e);
+        }
+    }
+
+    private static Object toJavaNumber(Value value) {
+        // GraalPy reports an integral float (25.0) as fitsInInt/fitsInLong, so the float type is checked first
+        if (isFloat(value)) return toJsonDouble(value);
+        if (value.fitsInInt()) return value.asInt();
+        if (value.fitsInLong()) return value.asLong();
+        if (value.fitsInBigInteger()) return value.asBigInteger();
+        // GraalPy does not report fitsInBigInteger for a Python int >= 2**63
+        if (typeIs(value, "int")) return new BigInteger(value.toString());
+        if (value.fitsInDouble()) return toJsonDouble(value);
+        throw new IllegalArgumentException("unsupported JSON value: " + typeName(value));
+    }
+
+    private static boolean isFloat(Value value) {
+        var meta = value.getMetaObject();
+        if (meta == null) return false;
+        var name = meta.getMetaQualifiedName();
+        return "float".equals(name) || "java.lang.Double".equals(name) || "java.lang.Float".equals(name);
+    }
+
+    private static Double toJsonDouble(Value value) {
+        double d = value.asDouble();
+        if (!Double.isFinite(d))
+            throw new IllegalArgumentException("unsupported JSON value: " + typeName(value) + " " + d);
+        return d;
+    }
+
+    private static String toJsonKey(Value key) {
+        if (key.isString()) return key.asString();
+        if (key.isNull() || !(key.isNumber() || key.isBoolean()))
+            throw new IllegalArgumentException("unsupported JSON key: " + typeName(key));
+        return key.toString();
     }
 
     public Value asValue(Object obj) {

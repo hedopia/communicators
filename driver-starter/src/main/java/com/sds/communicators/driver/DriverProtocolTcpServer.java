@@ -90,11 +90,11 @@ public class DriverProtocolTcpServer extends DriverProtocolTcpUdp {
     }
 
     @Override
-    protected void sendString(String msg, NettyOutbound outbound) throws Exception {
-        if (outbound == null)
+    protected void sendString(String msg, ReplyTarget target) throws Exception {
+        if (target == null || target.outbound() == null)
             throw new Exception("sendString with msg without outbound is not defined for tcp-server");
         log.debug("[{}] send response data: {}", deviceId, msg);
         var bytes = UtilFunc.stringToByteArray(msg);
-        syncExecute(() -> outbound.sendByteArray(Mono.just(bytes)).then().block());
+        syncExecute(() -> target.outbound().sendByteArray(Mono.just(bytes)).then().block());
     }
 }

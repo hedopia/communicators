@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.text.StringSubstitutor;
 import reactor.netty.http.server.HttpServerRoutes;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -104,6 +105,10 @@ public abstract class DriverStarter {
                 .setRoutes(DriverServerRoutes.getDriverServerRoutes(this, driverService, driverBasePath, clusterStarterBuilder.getClusterBasePath(), routes))
                 .build();
         driverService.clusterStarter = clusterStarter;
+        // the cluster's probe timeout: two heartbeat intervals (at least 1 s), never longer than a regular call
+        driverService.probeTimeout = Duration.ofMillis(Math.min(Math.max(2L * clusterStarter.getHeartbeatSendingIntervalMillis(), 1000L),
+                clusterStarterBuilder.getReadTimeoutMillis()));
+        driverService.readTimeout = Duration.ofMillis(clusterStarterBuilder.getReadTimeoutMillis());
         driverService.driverEvents.addAll(driverEvents);
     }
 
@@ -111,6 +116,7 @@ public abstract class DriverStarter {
         if (!isStarted) {
             isStarted = true;
             clusterStarter.startWithoutHttpServer();
+            driverService.start();
         }
     }
 
@@ -118,6 +124,7 @@ public abstract class DriverStarter {
         if (!isStarted) {
             isStarted = true;
             clusterStarter.start();
+            driverService.start();
         }
     }
 
@@ -171,14 +178,24 @@ public abstract class DriverStarter {
     }
 
     void deleteDevices(Map<String, String> deleteResults) {
+        Set<String> ownKeys = clusterStarter.readSharedObject(objects -> {
+            var own = objects.get(clusterStarter.getNodeIndex());
+            return own == null ? Set.of() : new HashSet<>(own.keySet());
+        });
         var deviceIds = deleteResults.keySet()
                 .stream()
-                .filter(deviceId ->
-                        !driverService.driverProtocols.containsKey(deviceId) &&
-                                clusterStarter.getSharedObject().containsKey(deviceId))
+                .filter(deviceId -> !driverService.driverProtocols.containsKey(deviceId) && ownKeys.contains(deviceId))
                 .collect(Collectors.toList());
         if (deviceIds.isEmpty()) return;
         clusterStarter.deleteSharedObject(deviceIds.stream().map(Collections::singletonList).collect(Collectors.toList()));
+    }
+
+    /**
+     * A node's shared object maps deviceId to the device setting ({@link #addDevices}), with script data under its
+     * "data" key; an entry without "id"/"connectionUrl" is script data left without a registration, not a device.
+     */
+    static boolean isDeviceEntry(Object value) {
+        return value instanceof Map<?, ?> map && map.containsKey("id") && map.containsKey("connectionUrl");
     }
 
     public String getDriverId() {
@@ -190,7 +207,18 @@ public abstract class DriverStarter {
     }
 
     public Map<Integer, Set<String>> getDeviceIdMap() {
-        return clusterStarter.getSharedObjectMap().entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().keySet()));
+        return clusterStarter.readSharedObject(objects -> {
+            var ret = new HashMap<Integer, Set<String>>();
+            for (var node : objects.entrySet()) {
+                var deviceIds = new HashSet<String>();
+                for (var entry : node.getValue().entrySet()) {
+                    if (isDeviceEntry(entry.getValue()))
+                        deviceIds.add(entry.getKey());
+                }
+                ret.put(node.getKey(), deviceIds);
+            }
+            return ret;
+        });
     }
 
     public Map<String, StatusCode> getDeviceStatus() {

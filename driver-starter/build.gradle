@@ -14,4 +14,12 @@ dependencies {
     api 'org.eclipse.milo:milo-sdk-server:1.1.6'
     api 'org.graalvm.polyglot:polyglot:23.1.12.1'  // 23.1 라인 최신 (GraalVM CE 21.0.2 내장 Truffle 컴파일러는 23.1.2)
     api 'org.graalvm.polyglot:python:23.1.12.1' // packaging pom: 의존성 집합(런타임 언어 모듈)
+
+    testImplementation platform('org.junit:junit-bom:6.0.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

@@ -1,10 +1,16 @@
 import CodeEditor from "./CodeEditor";
+import { useState } from "react";
+import { commandGuidance } from "./protocolGuidance";
+import type { ExecutionContext } from "./protocolGuidance";
 import { COMMAND_TYPES } from "./deviceForm";
-import type { CommandDraft } from "./deviceForm";
+import type { CommandDraft, ConnectionDraft } from "./deviceForm";
 import type { CommandType } from "./types";
 
 interface CommandEditorProps {
   command: CommandDraft;
+  connection?: ConnectionDraft;
+  executionContext?: ExecutionContext;
+  initialValue?: boolean;
   index: number;
   onChange: (command: CommandDraft) => void;
   onDuplicate: () => void;
@@ -15,11 +21,20 @@ type NumberField = "order" | "periodGroup" | "afterDelay" | "commandTimeout";
 
 function CommandEditor({
   command,
+  connection,
+  executionContext,
+  initialValue = false,
   index,
   onChange,
   onDuplicate,
   onRemove,
 }: CommandEditorProps) {
+  const [previewContext, setPreviewContext] = useState<ExecutionContext | "auto">("auto");
+  const [previewInitialValue, setPreviewInitialValue] = useState(false);
+  const context = executionContext ?? (previewContext === "auto"
+    ? command.periodGroup < 0 && !command.type.startsWith("STARTING_") && !command.type.startsWith("STOPPING_") ? "event" : "scheduled"
+    : previewContext);
+  const guide = commandGuidance(connection, command, context, executionContext ? initialValue : previewInitialValue);
   const patch = (values: Partial<CommandDraft>) => {
     onChange({ ...command, ...values });
   };
@@ -112,21 +127,54 @@ function CommandEditor({
           <textarea
             className="request-info-input"
             value={command.requestInfo}
-            placeholder='String or JSON matching the protocol request format (e.g. ["ns=2;s=Tag1"])'
+            placeholder={guide.example.value || "No static request example for this protocol"}
             onChange={(event) => patch({ requestInfo: event.target.value })}
             spellCheck={false}
           />
           <small>
-            Used as the default when a request-info function is present, and may be left empty.
+            {guide.requestHint}
           </small>
         </label>
       </div>
 
+      <section className="script-guide" aria-label="Protocol script guidance">
+        <strong>{connection?.protocol ?? "Unknown protocol"} · Script arguments</strong>
+        {!executionContext && <div className="form-grid">
+          <label className="form-field">
+            <span>Argument preview for (does not change execution)</span>
+            <select value={previewContext} onChange={(event) => setPreviewContext(event.target.value as ExecutionContext | "auto")}>
+              <option value="auto">Automatic from type / period group</option>
+              <option value="event">Incoming event</option>
+              <option value="scheduled">Periodic / starting / stopping</option>
+              <option value="rest">REST command endpoint</option>
+            </select>
+          </label>
+          {context === "rest" && <label className="form-field checkbox-field">
+            <span>REST preview</span>
+            <span className="checkbox-control"><input type="checkbox" checked={previewInitialValue} onChange={(event) => setPreviewInitialValue(event.target.checked)} /> Include initialValue</span>
+          </label>}
+        </div>}
+        <p>Execution context: {context}. Arguments bind by position, not name. Fewer parameters take the leading values; extra parameters fail. receivedTime is last and requires the full argument list.</p>
+        <code>{guide.cmdArgs ? `def cmdFunc(${guide.cmdArgs.join(", ")}):` : "cmdFunc: not called on this path, or no supported receive path"}</code>
+        <code>{guide.requestArgs ? `def requestInfo(${guide.requestArgs.join(", ")}):` : "requestInfo callback: unused on this path, or arguments unavailable"}</code>
+        <p>cmdFunc returns a list of (tagId, value[, time]) tuples, [] or None. requestInfo returns a string or None; use a helper or json.dumps for JSON, never return a dict/list directly.</p>
+        <p>Compilation requires cmdFunc for READ and REQUEST types, and static requestInfo or its callback for WRITE and nonnegative-period READ types. Python code and request payloads are validated by the runtime.</p>
+        {guide.warnings.map((warning) => <p className="script-warning" key={warning}>{warning}</p>)}
+        <details>
+          <summary>Protocol request format and helper example</summary>
+          <p>{guide.example.hint}</p>
+          {guide.example.value && <><span>Static requestInfo example</span><code>{guide.example.value}</code></>}
+          {guide.example.helper && <><span>Inside the Python requestInfo callback</span><code>{`return ${guide.example.helper}`}</code></>}
+          <p>protocol.requestInfo(...) builds a request string; it does not execute a command. Its arguments differ from def requestInfo(...).</p>
+        </details>
+        <button type="button" className="small" disabled={!!command.cmdScript || !guide.template || !connection} onClick={() => patch({ cmdScript: guide.template })}>Insert skeleton into empty script</button>
+        <small>The skeleton follows this preview only. Review it for every execution path; changing protocol or preview leaves existing code intact.</small>
+      </section>
       <CodeEditor
         label="Command script"
         value={command.cmdScript}
         onChange={(cmdScript) => patch({ cmdScript })}
-        placeholder="def cmdFunc(received, receivedTime):"
+        placeholder={guide.template || "# Select a supported protocol and execution path"}
         minHeight={190}
       />
     </article>

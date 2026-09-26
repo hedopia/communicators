@@ -31,8 +31,8 @@ class DriverCommand {
 
     DriverCommand(String defaultScript, DriverProtocol protocol) throws Exception {
         pythonEngine.set("log", LoggerFactory.getLogger(ScriptLogger.class));
-        pythonEngine.exec("from com.sds.communicators.common import UtilFunc");
         pythonEngine.exec("import java");
+        pythonEngine.exec("UtilFunc = java.type('com.sds.communicators.common.UtilFunc')");
         pythonEngine.exec(defaultScript);
 
         this.protocol = protocol;
@@ -69,6 +69,10 @@ class DriverCommand {
     }
 
     private CommandFunctions compileCommandScript(Command command) throws Exception {
+        return compileCommandScript(command, command.getId());
+    }
+
+    private CommandFunctions compileCommandScript(Command command, String functionId) throws Exception {
         if (!command.getId().matches("^[a-zA-Z0-9_]+$"))
             throw new Exception("cmdId=" + command.getId() + ", invalid command-id");
 
@@ -78,20 +82,26 @@ class DriverCommand {
                 ret = new CommandFunctions(command, null, null, null, null);
             } else {
                 String script = command.getCmdScript();
-                script = script.replaceFirst("def[ \t]+cmdFunc[ \t]*\\(", "def cmdFunc_" + command.getId() + "(");
-                script = script.replaceFirst("def[ \t]+requestInfo[ \t]*\\(", "def requestInfo_" + command.getId() + "(");
-                script = script.replaceFirst("def[ \t]+delay[ \t]*\\(", "def delay_" + command.getId() + "(");
-                script = script.replaceFirst("def[ \t]+control[ \t]*\\(", "def control_" + command.getId() + "(");
+                script = script.replaceFirst("def[ \t]+cmdFunc[ \t]*\\(", "def cmdFunc_" + functionId + "(");
+                script = script.replaceFirst("def[ \t]+requestInfo[ \t]*\\(", "def requestInfo_" + functionId + "(");
+                script = script.replaceFirst("def[ \t]+delay[ \t]*\\(", "def delay_" + functionId + "(");
+                script = script.replaceFirst("def[ \t]+control[ \t]*\\(", "def control_" + functionId + "(");
                 pythonEngine.exec(script);
-                var cmd = getFunction("cmdFunc_" + command.getId());
-                var req = getFunction("requestInfo_" + command.getId());
-                var delay = getFunction("delay_" + command.getId());
-                var control = getFunction("control_" + command.getId());
+                var cmd = getFunction("cmdFunc_" + functionId);
+                var req = getFunction("requestInfo_" + functionId);
+                var delay = getFunction("delay_" + functionId);
+                var control = getFunction("control_" + functionId);
 
                 ret = new CommandFunctions(command, cmd, req, delay, control);
             }
         } catch (Exception e) {
             throw new Exception("cmdId=" + command.getId() + ", compile failed", e);
+        } finally {
+            if (!functionId.equals(command.getId())) {
+                // Callable Values are retained by CommandFunctions, not by temporary global names.
+                for (var name : List.of("cmdFunc_", "requestInfo_", "delay_", "control_"))
+                    pythonEngine.remove(name + functionId);
+            }
         }
 
         // requestInfo not defined, requestInfo is empty, read(periodic) or write request
@@ -252,8 +262,12 @@ class DriverCommand {
 
     private List<Response> executeCommands(Set<Command> commands, boolean isResponseOutput, Value[] received, Long receivedTime, Value initialValue, Object nonPeriodicObject) throws Exception {
         List<CommandFunctions> functionList = new ArrayList<>();
-        for (var command : commands)
-            functionList.add(functionMap.containsKey(command.getId()) ? functionMap.get(command.getId()) : compileCommandScript(command));
+        for (var command : commands) {
+            var registered = functionMap.get(command.getId());
+            // Only registered objects reuse cached functions; incoming drafts may share their IDs.
+            functionList.add(registered != null && registered.command == command ? registered :
+                    compileCommandScript(command, "temporary_" + UUID.randomUUID().toString().replace("-", "")));
+        }
         functionList = functionList.stream().sorted(
                         Comparator.comparingInt((CommandFunctions a) -> a.command.getOrder()))
                 .collect(Collectors.toList());

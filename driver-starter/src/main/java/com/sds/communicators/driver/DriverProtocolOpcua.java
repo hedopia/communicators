@@ -8,9 +8,11 @@ import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.ULong;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UShort;
 
+import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 abstract class DriverProtocolOpcua extends DriverProtocol {
@@ -50,6 +52,7 @@ abstract class DriverProtocolOpcua extends DriverProtocol {
         if (value instanceof LocalizedText) return ((LocalizedText) value).getText();
         if (value instanceof QualifiedName) return ((QualifiedName) value).getName();
         if (value instanceof StatusCode) return ((StatusCode) value).getValue();
+        if (value instanceof Variant) return uaToJava(((Variant) value).getValue()); // element of a Variant array
         if (value instanceof Object[]) {
             var list = new ArrayList<>();
             for (var element : (Object[]) value)
@@ -64,6 +67,9 @@ abstract class DriverProtocolOpcua extends DriverProtocol {
     /** convert json-native java object (from jackson) to OPC UA variant, with optional type coercion */
     protected Variant javaToVariant(Object value, String type) throws Exception {
         if (value == null) return Variant.NULL_VALUE;
+        if (value instanceof List<?> list) return listToVariant(list, type);
+        if (value instanceof Map)
+            throw new Exception("unsupported value type for opc-ua write (structure is not supported): " + value);
         if (type != null) {
             return switch (type) {
                 case "Boolean" -> new Variant(toBoolean(value));
@@ -87,15 +93,45 @@ abstract class DriverProtocolOpcua extends DriverProtocol {
             return new Variant(value);
         if (value instanceof Number)
             return new Variant(((Number) value).doubleValue());
-        if (value instanceof List<?> list) {
-            var array = new Object[list.size()];
-            for (int i = 0; i < list.size(); i++) {
-                var variant = javaToVariant(list.get(i), null);
-                array[i] = variant.getValue();
-            }
-            return new Variant(array);
-        }
         throw new Exception("unsupported value type for opc-ua write: " + value.getClass());
+    }
+
+    private static final Set<Class<?>> WIDENING_NUMBERS = Set.of(Integer.class, Long.class, Float.class, Double.class);
+
+    /**
+     * list -> typed array when every converted element has the same class (numbers widened to Long/Double),
+     * otherwise (mixed types, null, nested list) Variant array - Milo cannot encode an Object[] value
+     */
+    private Variant listToVariant(List<?> list, String type) throws Exception {
+        var variants = new Variant[list.size()];
+        Class<?> elementClass = null;
+        for (int i = 0; i < variants.length; i++) {
+            variants[i] = javaToVariant(list.get(i), type);
+            var element = variants[i].getValue();
+            var valueClass = element == null || element.getClass().isArray() ? null : element.getClass();
+            elementClass = i == 0 ? valueClass : commonElementClass(elementClass, valueClass);
+        }
+        if (elementClass == null) {
+            // an empty list keeps the requested type (element class probed with a neutral value)
+            if (variants.length == 0 && type != null)
+                return new Variant(Array.newInstance(javaToVariant(0, type).getValue().getClass(), 0));
+            return new Variant(variants);
+        }
+        var array = Array.newInstance(elementClass, variants.length);
+        for (int i = 0; i < variants.length; i++) {
+            var element = variants[i].getValue();
+            if (elementClass == Long.class) element = ((Number) element).longValue();
+            else if (elementClass == Double.class) element = ((Number) element).doubleValue();
+            Array.set(array, i, element);
+        }
+        return new Variant(array);
+    }
+
+    private static Class<?> commonElementClass(Class<?> a, Class<?> b) {
+        if (a == null || b == null) return null;
+        if (a == b) return a;
+        if (!WIDENING_NUMBERS.contains(a) || !WIDENING_NUMBERS.contains(b)) return null;
+        return a == Float.class || a == Double.class || b == Float.class || b == Double.class ? Double.class : Long.class;
     }
 
     private boolean toBoolean(Object value) {

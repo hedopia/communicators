@@ -10,6 +10,7 @@ import org.javatuples.Pair;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 
 @Slf4j
 public class ClusterEvents {
@@ -111,5 +112,22 @@ public class ClusterEvents {
                 }
             });
         }
+    }
+
+    /** same as {@link #fireEvents(List, Object, Object, String)}, but returns only after every handler has finished */
+    static <T, U> void fireEventsAndWait(List<Pair<String, BiConsumer<T, U>>> events, T t, U u, String eventName) throws InterruptedException {
+        var finished = new CountDownLatch(events.size());
+        for (var action : events) {
+            Schedulers.io().scheduleDirect(() -> {
+                try {
+                    action.getValue1().accept(t, u);
+                } catch (Throwable e) {
+                    log.error("{} event [{}] failed", eventName, action.getValue0(), e);
+                } finally {
+                    finished.countDown();
+                }
+            });
+        }
+        finished.await();
     }
 }

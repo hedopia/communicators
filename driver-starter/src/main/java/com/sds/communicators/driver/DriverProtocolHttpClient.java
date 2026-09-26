@@ -3,7 +3,6 @@ package com.sds.communicators.driver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Strings;
 import com.google.common.primitives.Ints;
-import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import com.sds.communicators.driver.support.PythonEngine;
 import io.netty.handler.codec.http.HttpHeaders;
@@ -71,7 +70,7 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
             sb.setLength(sb.length() - 1);
         }
         var uri = URI.create(sb.toString());
-        var body = Strings.isNullOrEmpty(info.body) ? new byte[]{} : UtilFunc.stringToByteArray(info.body);
+        var body = bodyBytes(info.body);
         log.trace("[{}] send request, method={}, path={}, body={}, params={}, headers={}", deviceId, method.toString(), path, info.body, info.params, info.headers);
         AtomicReference<Quartet<byte[], HttpHeaders, Integer, Long>> reference = new AtomicReference<>(null);
         AtomicReference<Exception> exception = new AtomicReference<>(null);
@@ -146,77 +145,85 @@ public class DriverProtocolHttpClient extends DriverProtocolHttp {
         String method;
         String path;
         String basePath;
-        String body;
+        Object body;
         Map<String, List<String>> params;
         Map<String, List<String>> headers;
         Map<String, String> proxy;
     }
 
-    public String requestInfo(Value method, Value path, Value basePath, Value body, Value params, Value... headers) {
-        return requestInfo(method, path, basePath, body, params, null, null, null, null, null, headers);
-    }
-
-    public String requestInfo(Value method, Value path, Value basePath, Value body, Value params, Value proxyHost, Value proxyPort, Value... headers) {
-        return requestInfo(method, path, basePath, body, params, null, proxyHost, proxyPort, null, null, headers);
-    }
-    public String requestInfo(Value method, Value path, Value basePath, Value body, Value params,
-                              Value proxyType, Value proxyHost, Value proxyPort, Value proxyUsername, Value proxyPassword,
-                              Value... headers) {
-        var sb = new StringBuilder();
-        if (PythonEngine.isString(method))
-            sb.append("\"method\":\"")
-                    .append(method.asString())
-                    .append("\",");
-        if (PythonEngine.isString(path))
-            sb.append("\"path\":\"")
-                    .append(path.asString())
-                    .append("\",");
-        if (PythonEngine.isString(basePath))
-            sb.append("\"basePath\":\"")
-                    .append(basePath.asString())
-                    .append("\",");
-        if (!PythonEngine.isNone(body))
-            sb.append("\"body\":")
-                    .append(makeBody(body))
-                    .append(",");
+    /**
+     * One GraalPy entry point: trailing arguments are header pairs, optionally preceded by
+     * (proxyHost, proxyPort) or (proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword).
+     */
+    public String requestInfo(Value method, Value path, Value basePath, Value body, Value params, Value... options) {
+        var result = new java.util.LinkedHashMap<String, Object>();
+        if (PythonEngine.isString(method)) result.put("method", method.asString());
+        if (PythonEngine.isString(path)) result.put("path", path.asString());
+        if (PythonEngine.isString(basePath)) result.put("basePath", basePath.asString());
+        if (!PythonEngine.isNone(body)) result.put("body", PythonEngine.toJavaObject(body));
         if (PythonEngine.isDict(params)) {
-            sb.append("\"params\":");
             var paramMap = new HashMap<String, List<String>>();
             PythonEngine.forEachHashEntry(params, (k, v) -> {
                 if (v.hasArrayElements()) {
-                    var list = new ArrayList<String>();
+                    var values = new ArrayList<String>();
                     for (long i = 0; i < v.getArraySize(); i++)
-                        list.add(PythonEngine.asString(v.getArrayElement(i)));
-                    paramMap.put(PythonEngine.asString(k), list);
+                        values.add(PythonEngine.asString(v.getArrayElement(i)));
+                    paramMap.put(PythonEngine.asString(k), values);
                 }
             });
-            try {
-                sb.append(objectMapper.writeValueAsString(paramMap));
-            } catch (JsonProcessingException ignored) {}
-            sb.append(",");
+            result.put("params", paramMap);
         }
+
         var proxy = new HashMap<String, String>();
-        if (PythonEngine.isString(proxyType))
-            proxy.put("type", proxyType.asString());
-        if (PythonEngine.isString(proxyHost))
-            proxy.put("host", proxyHost.asString());
-        if (PythonEngine.isInteger(proxyPort))
-            proxy.put("port", Integer.toString(PythonEngine.asInt(proxyPort)));
-        if (PythonEngine.isString(proxyUsername))
-            proxy.put("username", proxyUsername.asString());
-        if (PythonEngine.isString(proxyPassword))
-            proxy.put("password", proxyPassword.asString());
-        if (!proxy.isEmpty()) {
-            sb.append("\"proxy\":");
-            try {
-                sb.append(objectMapper.writeValueAsString(proxy));
-            } catch (JsonProcessingException ignored) {}
-            sb.append(",");
+        int headerOffset = 0;
+        if (options.length % 2 != 0) {
+            if (options.length < 5)
+                throw new IllegalArgumentException("expected header pairs or five proxy fields followed by header pairs");
+            putProxyString(proxy, "type", options[0]);
+            putProxyString(proxy, "host", options[1]);
+            putProxyPort(proxy, options[2]);
+            putProxyString(proxy, "username", options[3]);
+            putProxyString(proxy, "password", options[4]);
+            headerOffset = 5;
+        } else if (options.length >= 2 && (PythonEngine.isInteger(options[1]) || PythonEngine.isNone(options[1]))) {
+            putProxyString(proxy, "host", options[0]);
+            putProxyPort(proxy, options[1]);
+            headerOffset = 2;
         }
-        setHeaders(headers, sb);
-        if (sb.length() > 0) sb.setLength(sb.length() - 1);
-        sb.insert(0, "{");
-        sb.append("}");
-        return sb.toString();
+        if (!proxy.isEmpty()) result.put("proxy", proxy);
+        var headers = headerMap(java.util.Arrays.copyOfRange(options, headerOffset, options.length));
+        if (!headers.isEmpty()) result.put("headers", headers);
+        return toJson(result);
+    }
+
+    private void putProxyString(Map<String, String> proxy, String name, Value value) {
+        if (PythonEngine.isString(value)) proxy.put(name, value.asString());
+    }
+
+    private void putProxyPort(Map<String, String> proxy, Value value) {
+        if (PythonEngine.isInteger(value)) proxy.put("port", Integer.toString(PythonEngine.asInt(value)));
+    }
+
+    // Retain the former Java descriptors for compiled callers, but do not expose competing varargs.
+    public String requestInfo(Value method, Value path, Value basePath, Value body, Value params,
+                              Value proxyHost, Value proxyPort, Value[] headers) {
+        var options = new Value[2 + headers.length];
+        options[0] = proxyHost;
+        options[1] = proxyPort;
+        System.arraycopy(headers, 0, options, 2, headers.length);
+        return requestInfo(method, path, basePath, body, params, options);
+    }
+
+    public String requestInfo(Value method, Value path, Value basePath, Value body, Value params,
+                              Value proxyType, Value proxyHost, Value proxyPort, Value proxyUsername, Value proxyPassword,
+                              Value[] headers) {
+        var options = new Value[5 + headers.length];
+        options[0] = proxyType;
+        options[1] = proxyHost;
+        options[2] = proxyPort;
+        options[3] = proxyUsername;
+        options[4] = proxyPassword;
+        System.arraycopy(headers, 0, options, 5, headers.length);
+        return requestInfo(method, path, basePath, body, params, options);
     }
 }

@@ -139,7 +139,7 @@ Open the management UI at `http://127.0.0.1:4001/driver/`.
 | `id` | Device identifier; only letters, numbers, and underscores are accepted | Required |
 | `group` | Devices in the same group are placed on the same node during load balancing | Empty |
 | `connectionUrl` | Protocol and connection settings | `tcp-client://127.0.0.1:5000` |
-| `protocolScript` | Python containing `protocolFunc` and/or `bufferingFunc` | Empty |
+| `protocolScript` | Protocol initialization code; TCP/UDP support `protocolFunc` and `bufferingFunc`, HTTP server supports `protocolFunc`; Dummy does not execute it | Empty |
 | `commands` | Command set, represented as a JSON array | Empty |
 | `responseTimeout` | Seconds without a response before connection loss; zero or negative means unlimited | `0` |
 | `maxRetryConnect` | Maximum retries after a connection failure; negative means unlimited | `5` |
@@ -206,10 +206,10 @@ A disconnect failure is reported as `DISCONNECTION_FAIL`.
 The scheme selects the protocol. Options are URL-encoded query parameters.
 
 ```text
-tcp-client://127.0.0.1:5000?endBytes=0x0D0A&bufferTime=200
+tcp-client://127.0.0.1:5000?endBytes=%5Cx0D%5Cx0A&bufferTime=200
 ```
 
-The common `connectionLostOnException` option controls whether a command exception marks the connection as lost. Client protocols default to `true`; server implementations set it to `false`.
+The common `connectionLostOnException` option controls whether a command exception marks the connection as lost. Client protocols and Dummy default to `true`; servers default to `false`. An explicit option overrides this default.
 
 ### TCP and UDP
 
@@ -230,8 +230,10 @@ Options:
 | `endBytes` | End delimiter bytes | None |
 | `retainStartEndBytes` | Include delimiter bytes in received data | `false` |
 | `combineBufferedData` | Flatten buffered packets into one byte list | `true` |
-| `bufferTime` | Buffering period in milliseconds | TCP: `100` without a delimiter/function, otherwise `0`; UDP: `0` |
+| `bufferTime` | Buffering period in milliseconds | TCP: `100` without `endBytes` and `bufferingFunc`, otherwise `0`; UDP: `0` |
 | `multicastGroup` | Comma-separated multicast groups for `udp-server` | None |
+
+Enter delimiter bytes as literal escape text such as `\x0D\x0A`, encoded as `%5Cx0D%5Cx0A` in a URL. `0x0D0A` is ordinary text, not a byte escape. The UI encodes the option values automatically. `startBytes` alone does not change TCP's default `bufferTime` of 100 ms. Negative explicit buffer times are clamped to zero; unparsable values use the protocol default. With `combineBufferedData=false`, the receive argument is a list of packet byte lists instead of one flat byte list.
 
 A request is either a string or:
 
@@ -250,9 +252,14 @@ RD\x0D\x0A
 Helpers:
 
 ```python
+protocol.requestInfo(message)
 protocol.requestInfo(message, host, port)
 protocol.requestInfo(message, sender)
 ```
+
+The one-argument helper returns a JSON string literal for a plain client send or
+an event reply. Addressed forms return a JSON object. Both preserve quotes and
+backslashes, including the byte-escape sequences in the message.
 
 The receive argument pool is:
 
@@ -279,7 +286,7 @@ Example:
 [
   {
     "id": "tcp_sensor_1",
-    "connectionUrl": "tcp-client://127.0.0.1:5000?endBytes=0x0D0A",
+    "connectionUrl": "tcp-client://127.0.0.1:5000?endBytes=%5Cx0D%5Cx0A",
     "commands": [
       {
         "id": "read_env",
@@ -306,7 +313,7 @@ Client options:
 
 | Option | Description | Default |
 |---|---|---|
-| `unitId` | Default unit ID | `1` |
+| `unitId` | Default unit ID; decimal integer, UI range 0–255 (fractional values such as `1.5` fail initialization) | `1` |
 | `combineData` | Combine multiple read blocks into one list | `true` |
 
 Read request:
@@ -387,8 +394,10 @@ Options:
 |---|---|
 | `cert`, `key` | PEM certificate and private key, or a keystore path |
 | `format`, `password` | Keystore format and password; the default format is PKCS12 |
-| `trustCert`, `trustFormat`, `trustPassword` | Trust material for mTLS |
-| `useByteArrayBody` | Pass the body as a byte list instead of parsed JSON or text |
+| `trustCert`, `trustFormat`, `trustPassword` | Trust material, applied only with `cert`. Omit both `trustFormat` and `trustPassword` for PEM; if only `trustPassword` is supplied, the format defaults to PKCS12 |
+| `useByteArrayBody` | Default `false`. `true` passes the body as a byte list; otherwise UTF-8 text is parsed as JSON when valid, or kept as a string |
+
+`trustCert` alone does not configure a custom TLS context. Use `cert` plus `key` for a PEM identity; without `key`, `cert` is a keystore and `format` defaults to PKCS12. An explicit `trustFormat` selects a Java keystore type; for PEM trust material leave both trust format and trust password empty. Paths are opened during initialization even when their TLS options are inactive, so supplied file paths must exist.
 
 HTTP client request:
 
@@ -427,7 +436,24 @@ protocol.requestInfo(
 )
 ```
 
-When headers are needed, construct the request JSON directly. Passing the helper's vararg header overload can be ambiguous through GraalPy.
+The first five arguments are `method, path, basePath, body, params`. They may be
+followed by header name/value string pairs:
+
+```python
+protocol.requestInfo("POST", "/items", None, {"items": ["a", "b"]}, None,
+                     "Content-Type", "application/json")
+```
+
+For a proxy, precede the header pairs with either `proxyHost, proxyPort` or all
+five proxy fields shown above. The short form uses an integer (or `None`) port;
+header values are strings. These forms use one GraalPy entry point and do not
+require Java overload selection.
+
+For both HTTP request and response helpers, dictionaries, lists, booleans, and
+numbers become structured JSON bodies. Quotes, backslashes, and Unicode are
+preserved on the wire. String bodies retain the existing byte-escape syntax
+(`\xNN`, `\r`, `\n`, etc.). Direct request JSON also accepts structured `body`
+values. Set the appropriate Content-Type header explicitly.
 
 HTTP server requests trigger non-periodic commands with:
 
@@ -465,7 +491,7 @@ The driver converts client URLs to `opc.tcp://...`.
 | Option | Description | Default |
 |---|---|---|
 | `securityPolicy` | `None`, `Basic128Rsa15`, `Basic256`, `Basic256Sha256`, `Aes128_Sha256_RsaOaep`, or `Aes256_Sha256_RsaPss` | `None` |
-| `securityMode` | `Sign` or `SignAndEncrypt` when the policy is not `None` | `SignAndEncrypt` |
+| `securityMode` | `Sign` or `SignAndEncrypt` when the policy is not `None`; ignored with `None` policy | `None` with `None` policy; otherwise `SignAndEncrypt` |
 | `username`, `password` | Username authentication; otherwise anonymous | Anonymous |
 | `subscriptionNodeIds` | Comma-separated NodeIds subscribed after connection | None |
 | `publishingInterval` | Subscription publishing interval in milliseconds | `1000` |
@@ -492,7 +518,9 @@ The read response passes this value to `cmdFunc`:
 [[nodeId, value], ...], receivedTime
 ```
 
-Use direct JSON for a single NodeId. A one-argument `protocol.requestInfo("nodeId")` call can select the write overload rather than the read varargs overload.
+A single `protocol.requestInfo("nodeId")` call produces a one-element read array.
+Multiple NodeId arguments also produce a read array. Passing a dictionary builds
+a write request and preserves arrays, numbers, booleans, nulls, and string escapes.
 
 Write requests:
 
@@ -528,13 +556,15 @@ protocol.subscribe(["ns=2;s=PLC1/hum"])
 |---|---|---|
 | `namespaceUri` | Namespace URI | `urn:sds:communicators:{deviceId}` |
 | `securityPolicy` | Endpoint security policy; the same values as the client are supported | `Basic256Sha256` with username; otherwise `None` |
-| `securityMode` | `Sign` or `SignAndEncrypt` when the policy is not `None` | `SignAndEncrypt` |
+| `securityMode` | `Sign` or `SignAndEncrypt` when the policy is not `None`; ignored with `None` policy | `None` with `None` policy; otherwise `SignAndEncrypt` |
 | `username`, `password` | Optional username authentication | None |
 | `anonymous` | Also allow anonymous access when a username is configured | `false` with username; otherwise `true` |
 | `pkiDir` | Directory containing the persistent server identity, trust list, and rejected client certificates | `pki/opcua/server/{deviceId}` |
 | `keyStorePassword` | Password for `identity.pfx`; uses the same fallback order as the client | See client options |
 
 When a username is configured without an explicit policy, the server automatically uses `Basic256Sha256` with `SignAndEncrypt`. Configuring username authentication with `SecurityPolicy.None` is rejected during initialization because it would expose the credentials. Anonymous-only servers retain the previous `None` default for compatibility; set a secure policy explicitly when anonymous access must also be protected.
+
+Without a username, `anonymous=false` is inactive: anonymous access remains enabled. In the UI, security mode and anonymous controls show these dependencies while preserving any previously configured inactive value.
 
 The server exposes a folder for the Device and creates variables from `Device.data`:
 
@@ -610,14 +640,16 @@ Available globals:
 
 ### Command functions
 
-Every function is optional.
+`cmdFunc` is required for every READ and REQUEST type. WRITE types do not call it. A static `Command.requestInfo` or a Python `requestInfo` callback is required at compilation for WRITE types and READ types with `periodGroup >= 0`. Direct protocol I/O also needs a request at execution time, even when a negative period group allowed compilation without one. `delay` and `control` are optional.
+
+This Modbus client example is for periodic/lifecycle or REST execution **without** `initial-value`:
 
 ```python
 def cmdFunc(received, receivedTime):
     return [("temperature", str(received[0]), receivedTime)]
 
 def requestInfo():
-    return protocol.requestInfo(40001, 10)
+    return protocol.requestInfo("40001", 10)
 
 def delay():
     return 1000
@@ -633,14 +665,16 @@ The runtime builds an argument pool and supplies as many leading values as the P
 | Position | Value | Included when |
 |---|---|---|
 | First | `initialValue` | A REST `initial-value` header or `protocol.executeCommands` value is present |
-| Middle | Protocol-specific received values | Execution was triggered by received data |
-| Last | `receivedTime` in epoch milliseconds | Received-data execution and `REQUEST` execution |
+| Middle | Protocol-specific received values | Incoming event or the response to a protocol read |
+| Last | `receivedTime` in epoch milliseconds | Incoming event, protocol read response, or `REQUEST` execution |
 
 Rules:
 
 - Declaring more parameters than the pool contains is an error.
 - `initialValue`, when present, is always first.
 - `receivedTime` is supplied only when the function declares the complete pool; trailing values are omitted first.
+- Binding is positional, regardless of parameter names. For TCP, `def cmdFunc(received, receivedTime)` receives the sender in its second parameter. Use `def cmdFunc(received, sender, receivedTime)` to receive the timestamp.
+- Python default parameter values do not increase the available pool. Use fixed positional parameters; do not rely on names or `*args` to select values.
 
 Protocol receive pools:
 
@@ -654,7 +688,41 @@ Protocol receive pools:
 | OPC UA client read | `received` |
 | OPC UA subscription | `nodeId`, `value` |
 | OPC UA server write | `name`, `value` |
-| `REQUEST` or Dummy | No receive values |
+| Any REQUEST type (including Dummy) | No receive values; `cmdFunc` receives the current time, preceded by `initialValue` when supplied |
+
+### Execution path and request functions
+
+These are three different interfaces:
+
+| Interface | Purpose |
+|---|---|
+| `Command.requestInfo` field | Static string in the protocol's request format (raw text or serialized JSON) |
+| `def requestInfo(...)` in `cmdScript` | Callback that constructs a request; returns a string, or `None` to use the static field / skip if empty |
+| `protocol.requestInfo(...)` | Protocol-specific Java helper that serializes a request string; it neither executes I/O nor shares the callback's argument list |
+
+The callback must not return a Python dict or list directly. Use a supported helper or `json.dumps(...)`.
+
+| Execution | `requestInfo` callback pool | `cmdFunc` pool |
+|---|---|---|
+| Periodic / starting / stopping protocol I/O | Empty: `def requestInfo():` | Protocol read-response pool above, including time; WRITE does not call `cmdFunc` |
+| REST protocol I/O, no `initial-value` | Empty | Protocol read-response pool including time |
+| REST protocol I/O, with `initial-value` | `initialValue` only | `initialValue` followed by protocol read-response pool including time |
+| Incoming event, exact `READ_REQUEST` | Not called; static request is also unused | Incoming event pool including time |
+| Incoming event, WRITE or lifecycle READ | Incoming event pool including time | WRITE: not called; lifecycle READ: subsequent protocol read-response pool including time |
+| REQUEST / STARTING_REQUEST / STOPPING_REQUEST | Not called; static request is unused | `receivedTime`, or `initialValue, receivedTime` when supplied; incoming values are not passed |
+
+Only exact `READ_REQUEST` consumes an event without sending a request. Automatic non-periodic execution selects all commands with `periodGroup < 0`, including STARTING/STOPPING types. A lifecycle READ selected by an event issues a new request; its callback arguments therefore differ between lifecycle and event execution. TCP/UDP and HTTP server `protocolFunc` can explicitly select command IDs. Review every path on which a registered command may run; an event-only signature is not generally valid when invoked through REST.
+
+Protocol restrictions:
+
+- HTTP client uses READ types for all methods, including POST/PUT/DELETE; WRITE types are unsupported.
+- HTTP server event READ consumes an incoming request; event WRITE sends a response. REST/periodic/lifecycle replies have no incoming response channel and fail. Direct READ calls are unsupported.
+- Modbus server event READ observes requests. Its direct read/write command I/O is a no-op; use REQUEST scripts with `protocol.read` / `protocol.write` for local data.
+- OPC UA client READ response arguments are `received, receivedTime`, where `received` contains node/value pairs. Subscription event arguments are `nodeId, value, receivedTime`.
+- OPC UA server event READ observes writes; WRITE updates local nodes by name. Direct READ is unsupported. It has no `protocol.requestInfo` helper: use a JSON string or `json.dumps` for writes.
+- Dummy has no protocol I/O or receive-event source. Use REQUEST scripts.
+
+The UI shows signatures for these execution paths, marks inactive options, and keeps existing scripts when the preview or protocol changes. The Commands tab uses the selected device's protocol and actual `initial-value` field; the Devices tab provides a preview selector and an initial-value toggle. Inserting a skeleton fills only an empty script and does not validate Python code or make one signature valid for every path.
 
 ### Return contracts
 
@@ -686,13 +754,13 @@ headers cannot carry.
 
 ```python
 def requestInfo(initialValue):
-    return protocol.requestInfo(3, [int(initialValue["speed"])])
+    return protocol.requestInfo("40003", [int(initialValue["speed"])])
 ```
 
 ### Protocol script functions
 
 ```python
-def protocolFunc(received, receivedTime):
+def protocolFunc(received, sender, receivedTime):
     return None
 
 def bufferingFunc(buffer):
@@ -706,6 +774,8 @@ For TCP and UDP, `protocolFunc` may return:
 - A list or tuple of command IDs: run those non-periodic commands
 
 For HTTP server, only a list or tuple of command IDs is supported.
+
+HTTP server's full signature is `def protocolFunc(method, path, body, params, headers, receivedTime):`. Other non-Dummy protocols execute `protocolScript` as initialization code but do not invoke `protocolFunc` or `bufferingFunc`. Dummy does not execute `protocolScript`. Use command callbacks for Modbus/OPC UA receive events.
 
 ### Main protocol object methods
 
@@ -722,7 +792,19 @@ protocol.getDeviceIdMap()
 protocol.getClusterNodes()
 ```
 
-Device data is stored in the cluster shared object.
+Device data is stored in the cluster shared object. `setData` and `deleteData` accept JSON values only: dicts with
+string, number, or bool keys, lists and tuples, strings, ints, floats, bools, and `None`. A float keeps its type
+(`25.0` is stored as `25.0`), and enums and beans returned by the `protocol` API are stored in their JSON form.
+Anything else, such as `datetime`, `Decimal`, `set`, NaN, or Infinity, raises an error in the calling script and
+leaves the data unchanged.
+
+`setData` and `deleteData` change only the data of a Device that is registered on this node. A script that still runs
+after its Device was disconnected gets the error `device <id> is not registered on this node`, and nothing is stored.
+Module-level `protocolScript` code runs while the Device is being connected, before it is registered, and may call
+`setData` there. The Device's configured `data` (on failover, the data carried over from the lost node) is then merged
+over what it wrote, so those writes act as defaults. If the connect fails at that stage, the written data is removed.
+With an empty path, `setData` accepts only a dict, because a Device's data must stay an object. `getData` returns a
+copy, so changing the returned value does not change the stored data.
 
 ## REST API
 
@@ -747,7 +829,62 @@ The default base path is `/driver`.
 | `POST` | `/execute-command-ids/{deviceId}` | Run registered command IDs and emit Responses |
 | `POST` | `/request-command-ids/{deviceId}` | Run registered command IDs without output emission |
 
+While the cluster is not activated (quorum not reached), `connect-all` and `balanced-connect-all` refuse every Device
+with `connect failed, cluster is not activated (quorum not reached)`, and the node does not take over the Devices of
+lost nodes.
+
+A Device found on two member nodes stays on the node with the lower `nodeIndex`. This happens, for example, after a
+split brain heals, or when a node stalls past the lost-node timeout and keeps its Devices while the leader fails them
+over. The higher node disconnects its copy without reconnecting it, but only after the lower node confirms through
+`device-status` that it runs the Device. Each node runs this check every five heartbeat intervals and when a peer's
+shared object is replaced. It also runs it two heartbeat intervals after a node joins, after it steps down to follower,
+and after it resolves a split brain. Each run checks every member, and only one runs at a time: a check requested while
+one is running makes that one run exactly once more afterwards. A Device the node is still connecting is left for a
+later check. The lower node must confirm within the cluster's probe timeout (two heartbeat intervals, at least one
+second, never longer than the read timeout). Each lower node is asked on its own, so a slow one does not delay the yield
+of a Device duplicated with another.
+
+If a lower node does not confirm within the probe timeout, the higher node keeps its copy and asks that node again right
+away, on a task of its own outside the check, with twice that timeout. Each further timeout in a row doubles the time
+allowed, up to the read timeout. While such a request runs, the checks never wait on that node, so no check waits for it
+longer than one probe timeout. When the node answers, or the request times out, the check runs again: it uses the answer,
+or asks once more with the longer time. A lower node that answers within the probe timeout again is asked by the check
+itself from then on; one that answers later keeps its longer time. Only the first timeout in a row is logged as a
+warning, the ones after it at debug level.
+
+Once such a request has run for a probe timeout, each check also probes the node: it asks it once more within the probe
+timeout, also on a task of its own, with at most one probe per node at a time. Whichever answers first is used. So a
+node that recovers while the longer request is stuck in it confirms within about one check interval, not only when that
+request answers or times out. An answer to a probe resets the longer time, and the longer request is cancelled, so its
+late answer is never used. A probe that fails changes nothing and is logged at debug level only. The longer request
+still runs, so a node that stays slow still confirms.
+
+A missing or invalid Device ID is refused with `connect failed, invalid device-id`. A node that already runs a Device
+keeps it and answers `connect failed, device is already connected on this node`.
+
+When a node loses quorum, it waits two heartbeat intervals and disconnects all its Devices only if it is still not
+activated, so a short stall (for example, a GC pause) does not drop them. For each Device it disconnects, it remembers
+the current setting from its own shared object, including the data its scripts wrote since the connect. When the node
+is activated again, it waits two heartbeat intervals and reconnects those Devices through the balanced connect, except
+the ones that another node registered meanwhile. A Device that gets no result, or is refused because the node lost
+quorum again, is kept for the next activation.
+
+When the leader removes a lost node, it waits four heartbeat intervals and then connects that node's Devices on the
+remaining nodes, if it still has quorum. The wait lets a node that was only partitioned away, whose own timers can fire
+up to one interval later, start disconnecting its Devices first. It skips entries of the lost node's shared object
+that are not Device settings and drops Device data that is not an object, and it still fails over every other Device. `device-id-map` and `devices` list Device settings only, which are entries with `id` and
+`connectionUrl`.
+
+If the lost node is a member again when the wait ends, for example because the partition healed meanwhile, the leader
+asks it through `device-status`, within the same probe timeout, and leaves out of the failover the Devices it confirms to
+run. A restarted node that does not run them, or a node that does not answer in time, still gets them failed over.
+
 The four command endpoints accept an optional `initial-value` header, whose value must be URL-encoded (UTF-8). The command-ID endpoints accept a JSON string array; the command endpoints accept a JSON Command array.
+
+The command endpoints execute the supplied definitions, even if an ID matches a
+registered command. They do not replace that registration. The command-ID
+endpoints, periodic execution, and event execution continue to use the registered
+definitions. Python module-level globals still share the Device's script context.
 
 Follower-to-leader delegation and leader-to-node connection distribution use the internal routes under `{driverBasePath}/internal` on the node's HTTP port. Those calls, and the cross-node command, status and response calls, go through the `NodeHttpClient` that `cluster-starter` owns, so they share its connection pool to each peer.
 

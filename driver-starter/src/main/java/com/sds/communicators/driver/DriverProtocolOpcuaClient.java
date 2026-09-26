@@ -17,6 +17,7 @@ import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
 import org.eclipse.milo.opcua.stack.core.types.builtin.LocalizedText;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
+import org.eclipse.milo.opcua.stack.core.types.builtin.StatusCode;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.MessageSecurityMode;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.TimestampsToReturn;
 import org.eclipse.milo.opcua.stack.core.util.EndpointUtil;
@@ -294,6 +295,16 @@ public class DriverProtocolOpcuaClient extends DriverProtocolOpcua {
                         }
                     }
                 }
+
+                @Override
+                public void onTransferFailed(OpcUaSubscription subscription, StatusCode status) {
+                    // the session was re-established but the server lost the subscription (e.g. server restart)
+                    // and Milo discards it - reconnect so that connectOnce creates it again
+                    log.warn("[{}] subscription transfer failed, status={}", deviceId, status);
+                    // a late callback from a subscription of an already discarded client must not reset the new connection
+                    if (!isSetDisconnected && subscription == DriverProtocolOpcuaClient.this.subscription)
+                        setConnectionLost();
+                }
             });
             subscription.createAsync().toCompletableFuture().get(socketTimeout, TimeUnit.MILLISECONDS);
         }
@@ -315,23 +326,14 @@ public class DriverProtocolOpcuaClient extends DriverProtocolOpcua {
     }
 
     public String requestInfo(String... nodeIds) {
-        return "[" + List.of(nodeIds).stream().map(id -> "\"" + id + "\"").collect(Collectors.joining(",")) + "]";
+        return toJson(List.of(nodeIds));
     }
 
     public String requestInfo(Value writeNodes) throws Exception {
-        var sb = new StringBuilder("{");
-        var first = true;
-        var entries = new ArrayList<String>();
-        PythonEngine.forEachHashEntry(writeNodes, (k, v) -> {
-            String value;
-            if (v.isString()) value = "\"" + v.asString() + "\"";
-            else if (v.isBoolean()) value = Boolean.toString(v.asBoolean());
-            else if (v.isNumber()) value = v.toString();
-            else value = "\"" + v + "\"";
-            entries.add("\"" + PythonEngine.asString(k) + "\":" + value);
-        });
-        sb.append(String.join(",", entries));
-        sb.append("}");
-        return sb.toString();
+        // GraalPy selects the fixed Value overload for a single NodeId string.
+        if (PythonEngine.isString(writeNodes)) return requestInfo(new String[]{writeNodes.asString()});
+        if (!PythonEngine.isDict(writeNodes))
+            throw new IllegalArgumentException("write request-info must be a nodeId/value mapping");
+        return toJson(PythonEngine.toJavaObject(writeNodes));
     }
 }

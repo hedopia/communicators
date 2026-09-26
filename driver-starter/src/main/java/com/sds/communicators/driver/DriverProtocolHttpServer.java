@@ -1,6 +1,7 @@
 package com.sds.communicators.driver;
 
 import com.google.common.base.Strings;
+import com.sds.communicators.cluster.support.RouteDispatcher;
 import com.sds.communicators.common.UtilFunc;
 import com.sds.communicators.common.struct.Response;
 import com.sds.communicators.driver.support.PythonEngine;
@@ -63,14 +64,17 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
         disposableServer = server
                 .port(port)
                 .doOnConnection(c -> {
-                    channels.add(c.channel());
-                    c.onDispose(() -> channels.remove(c.channel()));
+                    // called for every HTTP exchange, so a keep-alive channel is registered only once
+                    var channel = c.channel();
+                    if (channels.add(channel))
+                        channel.closeFuture().addListener(f -> channels.remove(channel));
                 })
                 .handle((request, response) ->
-                        request.receive()
-                                .aggregate()
-                                .asByteArray()
-                                .defaultIfEmpty(new byte[]{})
+                        // scripts, the command lock, after-delays and cluster calls block, so keep them off the event loop
+                        RouteDispatcher.continueOnWorker(request.receive()
+                                        .aggregate()
+                                        .asByteArray()
+                                        .defaultIfEmpty(new byte[]{}))
                                 .flatMap(body -> requestProcessing(request, response, body))
                                 .then())
                 .bindNow(Duration.ofMillis(socketTimeout));
@@ -121,7 +125,7 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
                 var requestInfo = requestInfoList.getLast();
                 var responseInfo = objectMapper.readValue(requestInfo, ResponseInfo.class);
                 var statusCode = responseInfo.httpStatusCode == null ? 200 : responseInfo.httpStatusCode;
-                var responseBody = Strings.isNullOrEmpty(responseInfo.body) ? new byte[]{} : UtilFunc.stringToByteArray(responseInfo.body);
+                var responseBody = bodyBytes(responseInfo.body);
                 if (responseInfo.headers != null)
                     responseInfo.headers.forEach((k,v) -> v.forEach(s -> response.header(k, s)));
                 log.trace("[{}] send response, httpStatusCode={}, body={}, headers={}", deviceId, statusCode, responseInfo.body, responseInfo.headers);
@@ -173,24 +177,16 @@ public class DriverProtocolHttpServer extends DriverProtocolHttp {
     @ToString
     public static class ResponseInfo {
         Integer httpStatusCode;
-        String body;
+        Object body;
         Map<String, List<String>> headers;
     }
 
     public String requestInfo(Value httpStatusCode, Value body, Value... headers) {
-        var sb = new StringBuilder();
-        if (PythonEngine.isInteger(httpStatusCode))
-            sb.append("\"httpStatusCode\":")
-                    .append(PythonEngine.asInt(httpStatusCode))
-                    .append(",");
-        if (!PythonEngine.isNone(body))
-            sb.append("\"body\":")
-                    .append(makeBody(body))
-                    .append(",");
-        setHeaders(headers, sb);
-        if (!sb.isEmpty()) sb.setLength(sb.length() - 1);
-        sb.insert(0, "{");
-        sb.append("}");
-        return sb.toString();
+        var result = new java.util.LinkedHashMap<String, Object>();
+        if (PythonEngine.isInteger(httpStatusCode)) result.put("httpStatusCode", PythonEngine.asInt(httpStatusCode));
+        if (!PythonEngine.isNone(body)) result.put("body", PythonEngine.toJavaObject(body));
+        var headerMap = headerMap(headers);
+        if (!headerMap.isEmpty()) result.put("headers", headerMap);
+        return toJson(result);
     }
 }
